@@ -16,9 +16,9 @@ This roadmap breaks the MVP into small sequential tasks so each task can be revi
   - [x] `ROADMAP.md`
 
 ### Task 002 - Setup frontend app (React + TS + Vite)
-- [ ] Initialize Vite React TypeScript app in `apps/web`
-- [ ] Configure npm scripts (`dev`, `build`, `preview`, `lint`)
-- [ ] Verify dev server starts successfully
+- [x] Initialize Vite React TypeScript app in `apps/web`
+- [x] Configure npm scripts (`dev`, `build`, `preview`, `lint`)
+- [x] Verify dev server starts successfully
 
 ### Task 003 - Install core frontend libraries
 - [ ] Install:
