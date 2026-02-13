@@ -1,6 +1,7 @@
 # RoboOps Mission Control - ROADMAP
 
 This roadmap breaks the MVP into small sequential tasks so each task can be reviewed and committed independently.
+Quality bar: this MVP should be production-like, polished, and visually strong, not a simplified demo.
 
 ## Phase 0 - Project Bootstrap
 
@@ -21,16 +22,16 @@ This roadmap breaks the MVP into small sequential tasks so each task can be revi
 - [x] Verify dev server starts successfully
 
 ### Task 003 - Install core frontend libraries
-- [ ] Install:
-  - [ ] `react-router-dom`
-  - [ ] `@tanstack/react-query`
-  - [ ] `zustand`
-  - [ ] `recharts`
-  - [ ] `clsx`
-  - [ ] `zod`
-- [ ] Map option:
-  - [ ] `maplibre-gl` if map mode is selected
-  - [ ] or SVG floorplan mode without maplibre
+- [x] Install:
+  - [x] `react-router-dom`
+  - [x] `@tanstack/react-query`
+  - [x] `zustand`
+  - [x] `recharts`
+  - [x] `clsx`
+  - [x] `zod`
+- [x] Map strategy (dual-render):
+  - [x] `maplibre-gl` for Delivery Rover Ops
+  - [x] SVG floorplan renderer for Warehouse AMR Ops
 
 ### Task 004 - Setup styling/UI foundation
 - [ ] Choose styling approach (recommended: CSS variables + plain CSS)
@@ -43,6 +44,7 @@ This roadmap breaks the MVP into small sequential tasks so each task can be revi
   - [ ] top bar (mode switch)
   - [ ] sidebar navigation
   - [ ] content container
+- [ ] Establish polished visual language (strong typography, layered backgrounds, purposeful motion)
 
 ### Task 005 - Setup backend simulator app (Node + ws)
 - [ ] Initialize `apps/sim` (Node + TypeScript)
@@ -152,7 +154,8 @@ This roadmap breaks the MVP into small sequential tasks so each task can be revi
 - [ ] Persist filters in localStorage
 
 ### Task 017 - Live Map (Delivery + Warehouse)
-- [ ] Render robot positions
+- [ ] Delivery renderer: MapLibre map with robot positions and overlays
+- [ ] Warehouse renderer: SVG floorplan with robot positions and zones
 - [ ] Render trail of last N points
 - [ ] Render current target/waypoint
 - [ ] Render geozones / warehouse zones
@@ -257,7 +260,7 @@ This roadmap breaks the MVP into small sequential tasks so each task can be revi
 - [ ] Record demo video
 - [ ] Verify reproducible one-command local run
 
-### Task 031 - Deployment (optional for MVP, recommended)
+### Task 031 - Deployment (recommended)
 - [ ] Deploy frontend (Vercel/Netlify)
 - [ ] Deploy simulator (Render/Fly/Railway/VM)
 - [ ] Configure env vars and production WS URL
