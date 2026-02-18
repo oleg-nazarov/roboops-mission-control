@@ -34,17 +34,24 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
   - [x] SVG floorplan renderer for Warehouse AMR Ops
 
 ### Task 004 - Setup styling/UI foundation
-- [ ] Choose styling approach (recommended: CSS variables + plain CSS)
-- [ ] Define design tokens:
-  - [ ] colors
-  - [ ] spacing
-  - [ ] typography
-  - [ ] status colors
-- [ ] Build app shell:
-  - [ ] top bar (mode switch)
-  - [ ] sidebar navigation
-  - [ ] content container
-- [ ] Establish polished visual language (strong typography, layered backgrounds, purposeful motion)
+- [x] Styling approach selected: `Tailwind CSS + CSS variables` (default stack)
+- [x] Install and configure Tailwind in `apps/web`
+- [x] Configure Tailwind content paths and base theme extension
+- [x] Define design tokens:
+  - [x] semantic colors (bg/surface/text/border)
+  - [x] status colors (`IDLE`, `ON_MISSION`, `NEED_ASSIST`, `FAULT`, `OFFLINE`)
+  - [x] spacing and radii scale
+  - [x] typography scale
+  - [x] motion/easing tokens
+- [x] Implement tokens as CSS variables in global stylesheet
+- [x] Wire Tailwind theme values to CSS variables
+- [x] Add mode-level theme switch hooks (Delivery/Warehouse) via root data attributes
+- [x] Build app shell:
+  - [x] top bar (mode switch)
+  - [x] sidebar navigation
+  - [x] content container
+- [x] Ensure token compatibility with MapLibre overlays and SVG floorplan renderer
+- [x] Establish polished visual language (strong typography, layered backgrounds, purposeful motion)
 
 ### Task 005 - Setup backend simulator app (Node + ws)
 - [ ] Initialize `apps/sim` (Node + TypeScript)

@@ -1,0 +1,44 @@
+:root {
+  --ui-font-display: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
+  --ui-font-body: 'IBM Plex Sans', 'Trebuchet MS', sans-serif;
+
+  --ui-color-bg: 228 35% 8%;
+  --ui-color-surface: 224 28% 14%;
+  --ui-color-surface-elevated: 221 24% 19%;
+  --ui-color-text: 210 35% 96%;
+  --ui-color-muted: 219 14% 66%;
+  --ui-color-border: 217 22% 30%;
+  --ui-color-accent: 193 94% 62%;
+  --ui-color-accent-soft: 193 70% 27%;
+
+  --ui-status-idle: 192 100% 61%;
+  --ui-status-on-mission: 154 73% 46%;
+  --ui-status-need-assist: 38 93% 56%;
+  --ui-status-fault: 0 79% 62%;
+  --ui-status-offline: 219 10% 46%;
+
+  --ui-space-shell-pad: clamp(1rem, 2.4vw, 1.75rem);
+  --ui-space-sidebar: 17rem;
+
+  --ui-radius-panel: 1rem;
+  --ui-radius-pill: 999px;
+
+  --ui-shadow-elevation: 0 16px 42px -20px hsl(221 50% 3% / 0.88);
+
+  --ui-motion-normal: 300ms;
+  --ui-ease-emphasis: cubic-bezier(0.16, 0.84, 0.24, 1);
+}
+
+:root[data-mode='delivery'] {
+  --ui-color-accent: 191 95% 60%;
+  --ui-color-accent-soft: 193 73% 26%;
+}
+
+:root[data-mode='warehouse'] {
+  --ui-color-bg: 24 37% 8%;
+  --ui-color-surface: 20 24% 14%;
+  --ui-color-surface-elevated: 24 19% 20%;
+  --ui-color-border: 29 24% 30%;
+  --ui-color-accent: 28 97% 58%;
+  --ui-color-accent-soft: 26 67% 29%;
+}
