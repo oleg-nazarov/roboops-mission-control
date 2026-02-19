@@ -74,14 +74,14 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 ## Phase 1 - Simulation and Data Pipeline
 
 ### Task 007 - Implement robot state generator
-- [ ] Create in-memory fleet model (6-20 robots)
-- [ ] Support statuses:
-  - [ ] `IDLE`
-  - [ ] `ON_MISSION`
-  - [ ] `NEED_ASSIST`
-  - [ ] `FAULT`
-  - [ ] `OFFLINE`
-- [ ] Update state every 200-500 ms
+- [x] Create in-memory fleet model (6-20 robots)
+- [x] Support statuses:
+  - [x] `IDLE`
+  - [x] `ON_MISSION`
+  - [x] `NEED_ASSIST`
+  - [x] `FAULT`
+  - [x] `OFFLINE`
+- [x] Update state every 200-500 ms
 
 ### Task 008 - Implement mission generator
 - [ ] Generate active missions for both modes:

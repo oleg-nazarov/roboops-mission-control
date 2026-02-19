@@ -1,15 +1,24 @@
 import { WebSocket, WebSocketServer } from 'ws'
 import { z } from 'zod'
+import { createFleetState, getRandomTickDelay, summarizeFleetStatuses, tickFleetState } from './fleet.js'
 
 const envSchema = z.object({
   SIM_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
   PING_INTERVAL_MS: z.coerce.number().int().min(250).default(3000),
+  ROBOT_COUNT: z.coerce.number().int().min(6).max(20).default(12),
+  FLEET_TICK_MIN_MS: z.coerce.number().int().min(200).default(200),
+  FLEET_TICK_MAX_MS: z.coerce.number().int().min(200).default(500),
+  FLEET_LOG_INTERVAL_MS: z.coerce.number().int().min(500).default(5000),
   SIM_EXIT_AFTER_MS: z.coerce.number().int().positive().optional(),
 })
 
 const env = envSchema.parse({
   SIM_PORT: process.env.SIM_PORT ?? '8090',
   PING_INTERVAL_MS: process.env.PING_INTERVAL_MS ?? '3000',
+  ROBOT_COUNT: process.env.ROBOT_COUNT ?? '12',
+  FLEET_TICK_MIN_MS: process.env.FLEET_TICK_MIN_MS ?? '200',
+  FLEET_TICK_MAX_MS: process.env.FLEET_TICK_MAX_MS ?? '500',
+  FLEET_LOG_INTERVAL_MS: process.env.FLEET_LOG_INTERVAL_MS ?? '5000',
   SIM_EXIT_AFTER_MS: process.env.SIM_EXIT_AFTER_MS,
 })
 
@@ -41,7 +50,9 @@ type OutboundMessage =
   | z.infer<typeof pongMessageSchema>
 
 const wss = new WebSocketServer({ port: env.SIM_PORT })
+const fleetState = createFleetState(env.ROBOT_COUNT, Date.now())
 let pingSequence = 0
+let fleetTickTimer: NodeJS.Timeout | undefined
 
 const sendJson = (socket: WebSocket, payload: OutboundMessage): void => {
   if (socket.readyState !== WebSocket.OPEN) {
@@ -63,6 +74,14 @@ const broadcastPing = (): void => {
   }
 
   pingSequence += 1
+}
+
+const scheduleFleetTick = (): void => {
+  tickFleetState(fleetState, Date.now())
+  fleetTickTimer = setTimeout(
+    scheduleFleetTick,
+    getRandomTickDelay(env.FLEET_TICK_MIN_MS, env.FLEET_TICK_MAX_MS),
+  )
 }
 
 wss.on('connection', (socket, request) => {
@@ -105,10 +124,23 @@ wss.on('connection', (socket, request) => {
 })
 
 const pingTimer = setInterval(broadcastPing, env.PING_INTERVAL_MS)
+const fleetLogTimer = setInterval(() => {
+  const status = summarizeFleetStatuses(fleetState)
+  console.log(
+    `[sim] fleet tick=${fleetState.tick} robots=${fleetState.robots.length} ` +
+      `IDLE=${status.IDLE} ON_MISSION=${status.ON_MISSION} NEED_ASSIST=${status.NEED_ASSIST} ` +
+      `FAULT=${status.FAULT} OFFLINE=${status.OFFLINE}`,
+  )
+}, env.FLEET_LOG_INTERVAL_MS)
+scheduleFleetTick()
 
 const shutdown = (signal: string): void => {
   console.log(`[sim] shutdown requested by ${signal}`)
+  if (fleetTickTimer) {
+    clearTimeout(fleetTickTimer)
+  }
   clearInterval(pingTimer)
+  clearInterval(fleetLogTimer)
   wss.close(() => {
     console.log('[sim] websocket server closed')
     process.exit(0)
@@ -128,3 +160,7 @@ if (env.SIM_EXIT_AFTER_MS) {
 
 console.log(`[sim] ws server listening at ws://localhost:${env.SIM_PORT}`)
 console.log(`[sim] ping interval: ${env.PING_INTERVAL_MS}ms`)
+console.log(
+  `[sim] fleet generator: robots=${fleetState.robots.length}, ` +
+    `tickRange=${env.FLEET_TICK_MIN_MS}-${env.FLEET_TICK_MAX_MS}ms`,
+)
