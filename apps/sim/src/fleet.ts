@@ -8,6 +8,7 @@ import type {
   RobotStatus,
   SensorHealth,
   Severity,
+  Telemetry,
 } from '@roboops/contracts'
 
 const STATUS_ORDER: RobotStatus[] = [
@@ -745,6 +746,31 @@ export const summarizeMissionTypes = (fleet: FleetRuntimeState): Record<MissionT
 
   return summary
 }
+
+export const createTelemetrySnapshot = (fleet: FleetRuntimeState): Telemetry[] =>
+  fleet.robots.map((robot) => ({
+    type: 'telemetry',
+    ts: fleet.updatedAtTs,
+    robotId: robot.robotId,
+    mode: fleet.mode,
+    status: robot.status,
+    missionId: robot.missionId,
+    pose: {
+      x: Number(robot.pose.x.toFixed(3)),
+      y: Number(robot.pose.y.toFixed(3)),
+      heading: Number(robot.pose.heading.toFixed(4)),
+    },
+    speed: Number(robot.speed.toFixed(3)),
+    battery: Number(robot.battery.toFixed(2)),
+    temp: Number(robot.temp.toFixed(2)),
+    localizationConfidence: Number(robot.localizationConfidence.toFixed(3)),
+    sensors: {
+      lidar: robot.sensors.lidar,
+      cam: robot.sensors.cam,
+      gps: robot.sensors.gps,
+      imu: robot.sensors.imu,
+    },
+  }))
 
 export const getRandomTickDelay = (minMs: number, maxMs: number): number => {
   const safeMin = Math.max(200, Math.floor(minMs))

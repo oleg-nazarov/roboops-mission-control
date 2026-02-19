@@ -100,10 +100,10 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Emit `event` + `incident` for anomaly cases
 
 ### Task 010 - JSONL logging and run sessions
-- [ ] Write stream to `data/runs/<runId>.jsonl`
-- [ ] Log line type: `telemetry` or `event`
-- [ ] Include `runId`, `missionId`, `robotId` in each record
-- [ ] Start a new file for each simulator run
+- [x] Write stream to `data/runs/<runId>.jsonl`
+- [x] Log line type: `telemetry` or `event`
+- [x] Include `runId`, `missionId`, `robotId` in each record
+- [x] Start a new file for each simulator run
 
 ### Task 011 - WebSocket streaming protocol
 - [ ] Define message types:

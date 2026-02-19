@@ -2,6 +2,7 @@ import { WebSocket, WebSocketServer } from 'ws'
 import { z } from 'zod'
 import type { Event as OpsEvent, Incident as OpsIncident } from '@roboops/contracts'
 import {
+  createTelemetrySnapshot,
   createFleetState,
   getRandomTickDelay,
   summarizeFleetStatuses,
@@ -9,6 +10,7 @@ import {
   switchFleetMode,
   tickFleetState,
 } from './fleet.js'
+import { createRunLogger } from './run-logger.js'
 
 const envSchema = z.object({
   SIM_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
@@ -82,6 +84,7 @@ type OutboundMessage =
 
 const wss = new WebSocketServer({ port: env.SIM_PORT })
 const fleetState = createFleetState(env.ROBOT_COUNT, Date.now(), env.SIM_MODE)
+const runLogger = createRunLogger()
 let pingSequence = 0
 let fleetTickTimer: NodeJS.Timeout | undefined
 
@@ -91,6 +94,30 @@ const sendJson = (socket: WebSocket, payload: OutboundMessage): void => {
   }
 
   socket.send(JSON.stringify(payload))
+}
+
+const buildSystemEvent = (
+  eventType: string,
+  message: string,
+  meta: Record<string, unknown> = {},
+): OpsEvent => ({
+  type: 'event',
+  ts: Date.now(),
+  robotId: 'SIM',
+  level: 'INFO',
+  eventType,
+  message,
+  meta: {
+    mode: fleetState.mode,
+    ...meta,
+  },
+})
+
+const publishSystemEvent = (event: OpsEvent): void => {
+  runLogger.logEventBatch([event])
+  for (const client of wss.clients) {
+    sendJson(client, event)
+  }
 }
 
 const broadcastPing = (): void => {
@@ -109,6 +136,10 @@ const broadcastPing = (): void => {
 
 const scheduleFleetTick = (): void => {
   const tickResult = tickFleetState(fleetState, Date.now())
+  const telemetryBatch = createTelemetrySnapshot(fleetState)
+
+  runLogger.logTelemetryBatch(telemetryBatch)
+  runLogger.logEventBatch(tickResult.events)
 
   if (tickResult.events.length > 0 || tickResult.incidents.length > 0) {
     for (const client of wss.clients) {
@@ -169,6 +200,12 @@ wss.on('connection', (socket, request) => {
           return
         }
 
+        publishSystemEvent(
+          buildSystemEvent('MODE_SWITCH', `Simulation mode switched to ${fleetState.mode}`, {
+            requestedBy: 'ws_client',
+          }),
+        )
+
         const modeChangedEvent = modeChangedMessageSchema.parse({
           type: 'mode_changed',
           mode: fleetState.mode,
@@ -208,6 +245,11 @@ const modeSwitchTimer =
         const switched = switchFleetMode(fleetState, nextMode, Date.now())
         if (switched) {
           console.log(`[sim] mode switched to ${fleetState.mode}`)
+          publishSystemEvent(
+            buildSystemEvent('MODE_SWITCH', `Simulation mode switched to ${fleetState.mode}`, {
+              requestedBy: 'auto_timer',
+            }),
+          )
         }
       }, env.MODE_SWITCH_INTERVAL_MS)
 scheduleFleetTick()
@@ -223,8 +265,11 @@ const shutdown = (signal: string): void => {
     clearInterval(modeSwitchTimer)
   }
   wss.close(() => {
-    console.log('[sim] websocket server closed')
-    process.exit(0)
+    runLogger.close(() => {
+      console.log('[sim] websocket server closed')
+      console.log(`[sim] run log flushed: ${runLogger.filePath}`)
+      process.exit(0)
+    })
   })
 
   setTimeout(() => {
@@ -241,8 +286,17 @@ if (env.SIM_EXIT_AFTER_MS) {
 
 console.log(`[sim] ws server listening at ws://localhost:${env.SIM_PORT}`)
 console.log(`[sim] ping interval: ${env.PING_INTERVAL_MS}ms`)
+console.log(`[sim] run session: ${runLogger.runId}`)
+console.log(`[sim] run log file: ${runLogger.filePath}`)
 console.log(
   `[sim] fleet generator: mode=${fleetState.mode}, robots=${fleetState.robots.length}, ` +
     `tickRange=${env.FLEET_TICK_MIN_MS}-${env.FLEET_TICK_MAX_MS}ms, ` +
     `modeSwitch=${env.MODE_SWITCH_INTERVAL_MS ?? 'disabled'}`,
+)
+
+publishSystemEvent(
+  buildSystemEvent('SIM_RUN_STARTED', 'Simulator run session started', {
+    runId: runLogger.runId,
+    robotCount: fleetState.robots.length,
+  }),
 )
