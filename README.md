@@ -28,4 +28,3 @@ Autonomy teams need tools to:
 ## Status
 
 Project bootstrap is in progress.
-See `ROADMAP.md` for the full task breakdown and sequence.

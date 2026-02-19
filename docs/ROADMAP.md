@@ -11,10 +11,10 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
   - [x] `apps/sim` (Node simulator + WebSocket server)
   - [x] `data` (JSONL logs and mock fixtures)
   - [x] `docs` (diagrams, screenshots, notes)
-- [x] Add root files:
+- [x] Add repository files:
   - [x] `.gitignore`
   - [x] `README.md` (draft)
-  - [x] `ROADMAP.md`
+  - [x] `docs/ROADMAP.md`
 
 ### Task 002 - Setup frontend app (React + TS + Vite)
 - [x] Initialize Vite React TypeScript app in `apps/web`
@@ -54,13 +54,13 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Establish polished visual language (strong typography, layered backgrounds, purposeful motion)
 
 ### Task 005 - Setup backend simulator app (Node + ws)
-- [ ] Initialize `apps/sim` (Node + TypeScript)
-- [ ] Install dependencies:
-  - [ ] `ws`
-  - [ ] `zod`
-  - [ ] `tsx` or `ts-node` for local run
-- [ ] Add scripts (`dev`, `start`, `generate`)
-- [ ] Launch basic WebSocket endpoint + ping event
+- [x] Initialize `apps/sim` (Node + TypeScript)
+- [x] Install dependencies:
+  - [x] `ws`
+  - [x] `zod`
+  - [x] `tsx` or `ts-node` for local run
+- [x] Add scripts (`dev`, `start`, `generate`)
+- [x] Launch basic WebSocket endpoint + ping event
 
 ### Task 006 - Define shared data contracts
 - [ ] Define TS types + schemas for:
