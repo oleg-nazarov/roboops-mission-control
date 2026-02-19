@@ -117,13 +117,13 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 ## Phase 2 - Frontend Skeleton and State
 
 ### Task 012 - App routing and page skeletons
-- [ ] Add routes:
-  - [ ] `/fleet`
-  - [ ] `/map`
-  - [ ] `/robots/:robotId`
-  - [ ] `/incidents`
-  - [ ] `/incidents/:incidentId/replay`
-- [ ] Add basic page placeholders
+- [x] Add routes:
+  - [x] `/fleet`
+  - [x] `/map`
+  - [x] `/robots/:robotId`
+  - [x] `/incidents`
+  - [x] `/incidents/:incidentId/replay`
+- [x] Add basic page placeholders
 
 ### Task 013 - Global app state architecture
 - [ ] Create Zustand store:

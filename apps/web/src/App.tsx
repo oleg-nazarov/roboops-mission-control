@@ -1,18 +1,36 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { FleetPage } from './pages/FleetPage'
+import { IncidentReplayPage } from './pages/IncidentReplayPage'
+import { IncidentsPage } from './pages/IncidentsPage'
+import { LiveMapPage } from './pages/LiveMapPage'
+import { RobotDetailPage } from './pages/RobotDetailPage'
 
 type OpsMode = 'delivery' | 'warehouse'
 
-const navItems = ['Fleet Overview', 'Live Map', 'Robot Detail', 'Incidents', 'Replay']
+type NavItem = {
+  label: string
+  path: string
+  badge: string
+}
 
-const telemetryPreview = [
-  { label: 'Active Robots', value: '14', trend: '+2' },
-  { label: 'Open Incidents', value: '3', trend: '-1' },
-  { label: 'Need Assist', value: '2', trend: 'stable' },
-  { label: 'Mean Battery', value: '74%', trend: '+4%' },
+const navItems: NavItem[] = [
+  { label: 'Fleet Overview', path: '/fleet', badge: '01' },
+  { label: 'Live Map', path: '/map', badge: '02' },
+  { label: 'Incidents', path: '/incidents', badge: '03' },
+  { label: 'Replay', path: '/incidents/INC-000001/replay', badge: '04' },
+  { label: 'Robot Detail', path: '/robots/RBT-001', badge: '05' },
 ]
+
+const routeTitles: Record<string, string> = {
+  '/fleet': 'Fleet Overview',
+  '/map': 'Live Map',
+  '/incidents': 'Incidents',
+}
 
 function App() {
   const [mode, setMode] = useState<OpsMode>('delivery')
+  const location = useLocation()
 
   useEffect(() => {
     document.documentElement.dataset.mode = mode
@@ -22,6 +40,18 @@ function App() {
     () => (mode === 'delivery' ? 'Delivery Rover Ops' : 'Warehouse AMR Ops'),
     [mode],
   )
+
+  const currentRouteTitle = useMemo(() => {
+    if (location.pathname.startsWith('/robots/')) {
+      return 'Robot Detail'
+    }
+
+    if (location.pathname.startsWith('/incidents/') && location.pathname.endsWith('/replay')) {
+      return 'Replay'
+    }
+
+    return routeTitles[location.pathname] ?? 'Mission Control'
+  }, [location.pathname])
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-bg text-text">
@@ -35,6 +65,7 @@ function App() {
               RoboOps Mission Control
             </p>
             <h1 className="font-display text-xl font-semibold">{modeTitle}</h1>
+            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-muted">{currentRouteTitle}</p>
           </div>
 
           <div className="flex items-center gap-2 rounded-pill border border-border/70 bg-surface-elevated/80 p-1">
@@ -62,88 +93,48 @@ function App() {
         <aside className="panel animate-shell-in p-5">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="font-display text-base font-semibold">Navigation</h2>
-            <span className="h-2.5 w-2.5 rounded-full bg-status-on-mission shadow-[0_0_0_6px_hsl(var(--ui-status-on-mission)_/_0.2)] animate-pulse-soft" />
+            <span className="h-2.5 w-2.5 animate-pulse-soft rounded-full bg-status-on-mission shadow-[0_0_0_6px_hsl(var(--ui-status-on-mission)_/_0.2)]" />
           </div>
 
           <nav aria-label="Primary sections" className="space-y-2">
-            {navItems.map((item, index) => (
-              <button
-                key={item}
-                className="group flex w-full items-center justify-between rounded-panel border border-border/50 bg-surface-elevated/50 px-3 py-2.5 text-left transition hover:border-accent/40 hover:bg-surface-elevated/80"
-                type="button"
+            {navItems.map((item) => (
+              <NavLink
+                key={item.path}
+                className={({ isActive }) =>
+                  [
+                    'group flex w-full items-center justify-between rounded-panel border px-3 py-2.5 text-left transition',
+                    isActive
+                      ? 'border-accent/55 bg-accent-soft/45'
+                      : 'border-border/50 bg-surface-elevated/50 hover:border-accent/40 hover:bg-surface-elevated/80',
+                  ].join(' ')
+                }
+                to={item.path}
               >
-                <span className="text-sm font-medium">{item}</span>
-                <span className="font-mono text-xs text-muted/70 group-hover:text-accent">
-                  0{index + 1}
-                </span>
-              </button>
+                <span className="text-sm font-medium">{item.label}</span>
+                <span className="font-mono text-xs text-muted/70 group-hover:text-accent">{item.badge}</span>
+              </NavLink>
             ))}
           </nav>
 
           <div className="mt-6 rounded-panel border border-border/60 bg-bg/35 p-3">
             <p className="mb-2 text-xs uppercase tracking-[0.18em] text-muted">Theme Hook</p>
             <p className="text-sm text-muted">
-              Active <code className="rounded bg-surface-elevated px-1.5 py-0.5">{`data-mode="${mode}"`}</code>
+              Active{' '}
+              <code className="rounded bg-surface-elevated px-1.5 py-0.5">{`data-mode="${mode}"`}</code>
             </p>
           </div>
         </aside>
 
         <main className="space-y-5">
-          <section className="panel animate-shell-in p-5 [animation-delay:80ms]">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-muted">Operations Snapshot</p>
-                <h2 className="font-display text-lg font-semibold">
-                  Fleet Health and Incident Signal
-                </h2>
-              </div>
-              <span className="rounded-pill border border-accent/40 bg-accent-soft px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em]">
-                Live Stream Ready
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {telemetryPreview.map((item, index) => (
-                <article
-                  className="rounded-panel border border-border/60 bg-surface-elevated/70 p-4 transition hover:border-accent/50"
-                  key={item.label}
-                >
-                  <p className="text-xs uppercase tracking-[0.14em] text-muted">{item.label}</p>
-                  <p className="mt-2 font-display text-2xl font-semibold">{item.value}</p>
-                  <p className="mt-1 text-xs text-muted">Trend: {item.trend}</p>
-                  <div
-                    className="mt-3 h-1.5 rounded-pill bg-accent-soft"
-                    style={{ width: `${Math.max(22, 85 - index * 14)}%` }}
-                  />
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel animate-shell-in p-5 [animation-delay:140ms]">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted">UI Foundation</p>
-            <h3 className="mt-2 font-display text-lg font-semibold">Styling Stack is Ready</h3>
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <div className="rounded-panel border border-border/60 bg-surface-elevated/65 p-3">
-                <p className="text-sm font-semibold">Tailwind Utilities</p>
-                <p className="mt-1 text-sm text-muted">
-                  Layout, spacing, typography, and motion are utility-driven.
-                </p>
-              </div>
-              <div className="rounded-panel border border-border/60 bg-surface-elevated/65 p-3">
-                <p className="text-sm font-semibold">CSS Variables</p>
-                <p className="mt-1 text-sm text-muted">
-                  Design tokens control semantic colors, states, and theme switching.
-                </p>
-              </div>
-              <div className="rounded-panel border border-border/60 bg-surface-elevated/65 p-3">
-                <p className="text-sm font-semibold">Renderer Compatibility</p>
-                <p className="mt-1 text-sm text-muted">
-                  Shared tokens are prepared for both MapLibre and SVG floorplan layers.
-                </p>
-              </div>
-            </div>
-          </section>
+          <Routes>
+            <Route element={<Navigate replace to="/fleet" />} path="/" />
+            <Route element={<FleetPage />} path="/fleet" />
+            <Route element={<LiveMapPage />} path="/map" />
+            <Route element={<RobotDetailPage />} path="/robots/:robotId" />
+            <Route element={<IncidentsPage />} path="/incidents" />
+            <Route element={<IncidentReplayPage />} path="/incidents/:incidentId/replay" />
+            <Route element={<Navigate replace to="/fleet" />} path="*" />
+          </Routes>
         </main>
       </div>
     </div>
