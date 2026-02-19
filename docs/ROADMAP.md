@@ -91,13 +91,13 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Add mode switch at simulation level
 
 ### Task 009 - Inject anomalies/incidents
-- [ ] Add probabilistic anomalies:
-  - [ ] localization confidence drop
-  - [ ] sensor fail (lidar/cam/gps/imu)
-  - [ ] stuck robot
-  - [ ] offline for 10s
-  - [ ] geofence violation
-- [ ] Emit `event` + `incident` for anomaly cases
+- [x] Add probabilistic anomalies:
+  - [x] localization confidence drop
+  - [x] sensor fail (lidar/cam/gps/imu)
+  - [x] stuck robot
+  - [x] offline for 10s
+  - [x] geofence violation
+- [x] Emit `event` + `incident` for anomaly cases
 
 ### Task 010 - JSONL logging and run sessions
 - [ ] Write stream to `data/runs/<runId>.jsonl`

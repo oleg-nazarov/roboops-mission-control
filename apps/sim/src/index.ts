@@ -1,5 +1,6 @@
 import { WebSocket, WebSocketServer } from 'ws'
 import { z } from 'zod'
+import type { Event as OpsEvent, Incident as OpsIncident } from '@roboops/contracts'
 import {
   createFleetState,
   getRandomTickDelay,
@@ -75,6 +76,8 @@ type OutboundMessage =
   | z.infer<typeof connectedMessageSchema>
   | z.infer<typeof pingMessageSchema>
   | z.infer<typeof pongMessageSchema>
+  | OpsEvent
+  | OpsIncident
   | z.infer<typeof modeChangedMessageSchema>
 
 const wss = new WebSocketServer({ port: env.SIM_PORT })
@@ -105,7 +108,24 @@ const broadcastPing = (): void => {
 }
 
 const scheduleFleetTick = (): void => {
-  tickFleetState(fleetState, Date.now())
+  const tickResult = tickFleetState(fleetState, Date.now())
+
+  if (tickResult.events.length > 0 || tickResult.incidents.length > 0) {
+    for (const client of wss.clients) {
+      for (const event of tickResult.events) {
+        sendJson(client, event)
+      }
+
+      for (const incident of tickResult.incidents) {
+        sendJson(client, incident)
+      }
+    }
+
+    console.log(
+      `[sim] anomaly burst events=${tickResult.events.length} incidents=${tickResult.incidents.length}`,
+    )
+  }
+
   fleetTickTimer = setTimeout(
     scheduleFleetTick,
     getRandomTickDelay(env.FLEET_TICK_MIN_MS, env.FLEET_TICK_MAX_MS),

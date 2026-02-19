@@ -1,4 +1,14 @@
-import type { MissionStatus, MissionType, OpsMode, RobotStatus } from '@roboops/contracts'
+import type {
+  Event as OpsEvent,
+  Incident as OpsIncident,
+  IncidentType,
+  MissionStatus,
+  MissionType,
+  OpsMode,
+  RobotStatus,
+  SensorHealth,
+  Severity,
+} from '@roboops/contracts'
 
 const STATUS_ORDER: RobotStatus[] = [
   'IDLE',
@@ -8,7 +18,22 @@ const STATUS_ORDER: RobotStatus[] = [
   'OFFLINE',
 ]
 
+const SENSOR_KEYS = ['lidar', 'cam', 'gps', 'imu'] as const
+type SensorKey = (typeof SENSOR_KEYS)[number]
+
 const WAREHOUSE_MISSION_TYPES: MissionType[] = ['MOVE', 'BRING', 'PICK']
+
+const ANOMALY_COOLDOWN_MS = {
+  localization: 9_000,
+  sensorFail: 15_000,
+  stuck: 10_000,
+  offline: 16_000,
+  geofence: 11_000,
+} as const
+
+const OFFLINE_ANOMALY_DURATION_MS = 10_000
+
+type AnomalyKey = keyof typeof ANOMALY_COOLDOWN_MS
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value))
@@ -29,6 +54,15 @@ const randomMissionTypeForMode = (mode: OpsMode): MissionType => {
 
   const index = randomInt(0, WAREHOUSE_MISSION_TYPES.length - 1)
   return WAREHOUSE_MISSION_TYPES[index]
+}
+
+const randomSensorStatus = (): SensorHealth => {
+  const roll = Math.random()
+  if (roll < 0.9) {
+    return 'OK'
+  }
+
+  return 'WARN'
 }
 
 export type Waypoint = {
@@ -64,7 +98,10 @@ export type RobotRuntimeState = {
     y: number
     heading: number
   }
+  sensors: Record<SensorKey, SensorHealth>
+  stuckUntilTs?: number
   offlineUntilTs?: number
+  anomalyCooldownUntilTs: Record<AnomalyKey, number>
 }
 
 export type FleetRuntimeState = {
@@ -75,12 +112,31 @@ export type FleetRuntimeState = {
   updatedAtTs: number
   modeChangedAtTs: number
   nextMissionSeq: number
+  nextIncidentSeq: number
+  nextEventSeq: number
+}
+
+export type FleetTickResult = {
+  events: OpsEvent[]
+  incidents: OpsIncident[]
 }
 
 const assignMissionId = (fleet: FleetRuntimeState): string => {
   const missionId = `MSN-${String(fleet.nextMissionSeq).padStart(5, '0')}`
   fleet.nextMissionSeq += 1
   return missionId
+}
+
+const assignIncidentId = (fleet: FleetRuntimeState): string => {
+  const incidentId = `INC-${String(fleet.nextIncidentSeq).padStart(6, '0')}`
+  fleet.nextIncidentSeq += 1
+  return incidentId
+}
+
+const assignEventId = (fleet: FleetRuntimeState): string => {
+  const eventId = `EVT-${String(fleet.nextEventSeq).padStart(6, '0')}`
+  fleet.nextEventSeq += 1
+  return eventId
 }
 
 const createRoute = (mode: OpsMode, origin: Waypoint): { waypoints: Waypoint[]; target: Waypoint } => {
@@ -169,7 +225,12 @@ const ensureMissionForRobot = (
   return createMissionForRobot(fleet, robot, now, initialStatus)
 }
 
-const setStatus = (fleet: FleetRuntimeState, robot: RobotRuntimeState, status: RobotStatus): void => {
+const setStatus = (
+  fleet: FleetRuntimeState,
+  robot: RobotRuntimeState,
+  status: RobotStatus,
+  options?: { offlineDurationMs?: number },
+): void => {
   robot.status = status
   const now = fleet.updatedAtTs
 
@@ -199,13 +260,14 @@ const setStatus = (fleet: FleetRuntimeState, robot: RobotRuntimeState, status: R
     }
     robot.speed = 0
     robot.missionId = undefined
+    robot.stuckUntilTs = undefined
     robot.offlineUntilTs = undefined
     return
   }
 
   if (status === 'OFFLINE') {
     robot.speed = 0
-    robot.offlineUntilTs = now + randomInt(6_000, 12_000)
+    robot.offlineUntilTs = now + (options?.offlineDurationMs ?? randomInt(6_000, 12_000))
     const mission = getMissionForRobot(fleet, robot)
     if (mission && mission.status === 'ACTIVE') {
       mission.status = 'PAUSED'
@@ -223,6 +285,7 @@ const setStatus = (fleet: FleetRuntimeState, robot: RobotRuntimeState, status: R
 
   robot.speed = 0
   robot.missionId = undefined
+  robot.stuckUntilTs = undefined
   robot.offlineUntilTs = undefined
 }
 
@@ -254,7 +317,7 @@ const updateBaseMetrics = (robot: RobotRuntimeState): void => {
     robot.temp = clamp(robot.temp + randomFloat(-0.08, 0.12), 15, 85)
     robot.localizationConfidence = clamp(
       robot.localizationConfidence + randomFloat(-0.02, 0.003),
-      0.5,
+      0.45,
       0.95,
     )
     return
@@ -271,6 +334,20 @@ const updateBaseMetrics = (robot: RobotRuntimeState): void => {
   }
 }
 
+const updateSensorRecovery = (robot: RobotRuntimeState): void => {
+  for (const key of SENSOR_KEYS) {
+    const state = robot.sensors[key]
+    if (state === 'FAIL' && robot.status !== 'OFFLINE' && Math.random() < 0.06) {
+      robot.sensors[key] = 'WARN'
+      continue
+    }
+
+    if (state === 'WARN' && Math.random() < 0.08) {
+      robot.sensors[key] = 'OK'
+    }
+  }
+}
+
 const updateMissionProgress = (fleet: FleetRuntimeState, robot: RobotRuntimeState): void => {
   if (robot.status !== 'ON_MISSION') {
     return
@@ -280,6 +357,18 @@ const updateMissionProgress = (fleet: FleetRuntimeState, robot: RobotRuntimeStat
   mission.mode = fleet.mode
   mission.updatedAtTs = fleet.updatedAtTs
   mission.status = 'ACTIVE'
+
+  if (robot.stuckUntilTs && robot.stuckUntilTs > fleet.updatedAtTs) {
+    mission.status = 'PAUSED'
+    robot.speed = 0
+    return
+  }
+
+  if (robot.stuckUntilTs && robot.stuckUntilTs <= fleet.updatedAtTs) {
+    robot.stuckUntilTs = undefined
+    robot.speed = randomFloat(0.7, 1.7)
+  }
+
   mission.progress = clamp(mission.progress + randomFloat(1.8, 5.6), 0, 100)
 
   const waypointIndex = Math.min(
@@ -317,18 +406,8 @@ const applyTransitions = (fleet: FleetRuntimeState, robot: RobotRuntimeState): v
     return
   }
 
-  if (Math.random() < 0.004) {
-    setStatus(fleet, robot, 'OFFLINE')
-    return
-  }
-
   if (robot.status === 'IDLE' && Math.random() < 0.08) {
     setStatus(fleet, robot, 'ON_MISSION')
-    return
-  }
-
-  if (robot.status === 'ON_MISSION' && Math.random() < 0.017) {
-    setStatus(fleet, robot, 'NEED_ASSIST')
     return
   }
 
@@ -337,19 +416,177 @@ const applyTransitions = (fleet: FleetRuntimeState, robot: RobotRuntimeState): v
     return
   }
 
-  if (robot.status === 'NEED_ASSIST' && Math.random() < 0.2) {
-    setStatus(fleet, robot, 'ON_MISSION')
-    return
-  }
-
-  if (robot.status !== 'FAULT' && Math.random() < 0.006) {
-    robot.faults24h += 1
-    setStatus(fleet, robot, 'FAULT')
-    return
+  if (robot.status === 'NEED_ASSIST' && (!robot.stuckUntilTs || robot.stuckUntilTs <= fleet.updatedAtTs)) {
+    if (Math.random() < 0.22) {
+      setStatus(fleet, robot, 'ON_MISSION')
+      return
+    }
   }
 
   if (robot.status === 'FAULT' && Math.random() < 0.18) {
+    for (const key of SENSOR_KEYS) {
+      robot.sensors[key] = 'OK'
+    }
     setStatus(fleet, robot, 'IDLE')
+  }
+}
+
+const canTriggerAnomaly = (robot: RobotRuntimeState, kind: AnomalyKey, now: number): boolean =>
+  now >= robot.anomalyCooldownUntilTs[kind]
+
+const setAnomalyCooldown = (robot: RobotRuntimeState, kind: AnomalyKey, now: number): void => {
+  robot.anomalyCooldownUntilTs[kind] = now + ANOMALY_COOLDOWN_MS[kind]
+}
+
+const pushAnomalySignal = (
+  fleet: FleetRuntimeState,
+  robot: RobotRuntimeState,
+  bucket: FleetTickResult,
+  payload: {
+    incidentType: IncidentType
+    severity: Severity
+    eventType: string
+    level: 'WARN' | 'ERROR'
+    message: string
+    meta?: Record<string, unknown>
+  },
+): void => {
+  const ts = fleet.updatedAtTs
+  const missionId = robot.missionId
+  const eventId = assignEventId(fleet)
+  const incidentId = assignIncidentId(fleet)
+  const meta = {
+    ...(payload.meta ?? {}),
+    eventId,
+    mode: fleet.mode,
+  }
+
+  const event: OpsEvent = {
+    type: 'event',
+    ts,
+    robotId: robot.robotId,
+    missionId,
+    level: payload.level,
+    eventType: payload.eventType,
+    message: payload.message,
+    meta,
+  }
+
+  const incident: OpsIncident = {
+    type: 'incident',
+    ts,
+    incidentId,
+    robotId: robot.robotId,
+    missionId,
+    incidentType: payload.incidentType,
+    severity: payload.severity,
+    message: payload.message,
+    resolved: false,
+    meta: {
+      ...meta,
+      linkedEventType: payload.eventType,
+    },
+  }
+
+  bucket.events.push(event)
+  bucket.incidents.push(incident)
+}
+
+const applyAnomalies = (fleet: FleetRuntimeState, robot: RobotRuntimeState, bucket: FleetTickResult): void => {
+  const now = fleet.updatedAtTs
+
+  if (
+    robot.status === 'ON_MISSION' &&
+    canTriggerAnomaly(robot, 'localization', now) &&
+    Math.random() < 0.015
+  ) {
+    setAnomalyCooldown(robot, 'localization', now)
+    robot.localizationConfidence = clamp(randomFloat(0.14, 0.34), 0, 1)
+    setStatus(fleet, robot, 'NEED_ASSIST')
+    pushAnomalySignal(fleet, robot, bucket, {
+      incidentType: 'LOCALIZATION_DROPOUT',
+      severity: 'HIGH',
+      eventType: 'LOCALIZATION_DROPOUT',
+      level: 'ERROR',
+      message: 'Localization confidence dropped below safety threshold',
+      meta: {
+        localizationConfidence: Number(robot.localizationConfidence.toFixed(3)),
+      },
+    })
+    return
+  }
+
+  if (robot.status !== 'OFFLINE' && canTriggerAnomaly(robot, 'sensorFail', now) && Math.random() < 0.008) {
+    setAnomalyCooldown(robot, 'sensorFail', now)
+    const sensorKey = SENSOR_KEYS[randomInt(0, SENSOR_KEYS.length - 1)]
+    robot.sensors[sensorKey] = 'FAIL'
+    setStatus(fleet, robot, 'FAULT')
+    pushAnomalySignal(fleet, robot, bucket, {
+      incidentType: 'SENSOR_FAIL',
+      severity: 'CRITICAL',
+      eventType: 'SENSOR_FAIL',
+      level: 'ERROR',
+      message: `Sensor ${sensorKey.toUpperCase()} reported FAIL`,
+      meta: { sensor: sensorKey },
+    })
+    return
+  }
+
+  if (robot.status === 'ON_MISSION' && canTriggerAnomaly(robot, 'stuck', now) && Math.random() < 0.012) {
+    setAnomalyCooldown(robot, 'stuck', now)
+    robot.stuckUntilTs = now + randomInt(4_000, 8_000)
+    robot.speed = 0
+    setStatus(fleet, robot, 'NEED_ASSIST')
+    pushAnomalySignal(fleet, robot, bucket, {
+      incidentType: 'STUCK',
+      severity: 'MEDIUM',
+      eventType: 'STUCK',
+      level: 'WARN',
+      message: 'Robot movement stalled during mission execution',
+      meta: {
+        stuckUntilTs: robot.stuckUntilTs,
+      },
+    })
+    return
+  }
+
+  if (robot.status !== 'OFFLINE' && canTriggerAnomaly(robot, 'offline', now) && Math.random() < 0.0045) {
+    setAnomalyCooldown(robot, 'offline', now)
+    setStatus(fleet, robot, 'OFFLINE', { offlineDurationMs: OFFLINE_ANOMALY_DURATION_MS })
+    pushAnomalySignal(fleet, robot, bucket, {
+      incidentType: 'SENSOR_FAIL',
+      severity: 'HIGH',
+      eventType: 'OFFLINE_TIMEOUT',
+      level: 'ERROR',
+      message: 'Robot lost connectivity and went offline for 10 seconds',
+      meta: { offlineDurationMs: OFFLINE_ANOMALY_DURATION_MS },
+    })
+    return
+  }
+
+  if (
+    fleet.mode === 'DELIVERY' &&
+    robot.status === 'ON_MISSION' &&
+    canTriggerAnomaly(robot, 'geofence', now) &&
+    Math.random() < 0.006
+  ) {
+    setAnomalyCooldown(robot, 'geofence', now)
+    robot.pose.x = Math.random() < 0.5 ? -randomFloat(1, 4) : 100 + randomFloat(1, 4)
+    robot.pose.y = clamp(robot.pose.y + randomFloat(-2, 2), 0, 100)
+    setStatus(fleet, robot, 'NEED_ASSIST')
+    pushAnomalySignal(fleet, robot, bucket, {
+      incidentType: 'GEOFENCE_VIOLATION',
+      severity: 'CRITICAL',
+      eventType: 'GEOFENCE_VIOLATION',
+      level: 'ERROR',
+      message: 'Robot crossed geofence boundary during delivery route',
+      meta: {
+        pose: {
+          x: Number(robot.pose.x.toFixed(2)),
+          y: Number(robot.pose.y.toFixed(2)),
+        },
+      },
+    })
   }
 }
 
@@ -367,6 +604,8 @@ export const createFleetState = (
     updatedAtTs: now,
     modeChangedAtTs: now,
     nextMissionSeq: 1,
+    nextIncidentSeq: 1,
+    nextEventSeq: 1,
   }
 
   for (let index = 0; index < robotCount; index += 1) {
@@ -385,6 +624,19 @@ export const createFleetState = (
         x: randomFloat(0, 100),
         y: randomFloat(0, 100),
         heading: randomFloat(0, Math.PI * 2),
+      },
+      sensors: {
+        lidar: randomSensorStatus(),
+        cam: randomSensorStatus(),
+        gps: randomSensorStatus(),
+        imu: randomSensorStatus(),
+      },
+      anomalyCooldownUntilTs: {
+        localization: 0,
+        sensorFail: 0,
+        stuck: 0,
+        offline: 0,
+        geofence: 0,
       },
     }
 
@@ -437,9 +689,14 @@ export const switchFleetMode = (fleet: FleetRuntimeState, mode: OpsMode, now: nu
   return true
 }
 
-export const tickFleetState = (fleet: FleetRuntimeState, now: number): void => {
+export const tickFleetState = (fleet: FleetRuntimeState, now: number): FleetTickResult => {
   fleet.updatedAtTs = now
   fleet.tick += 1
+
+  const result: FleetTickResult = {
+    events: [],
+    incidents: [],
+  }
 
   for (const robot of fleet.robots) {
     if (robot.status !== 'OFFLINE') {
@@ -447,9 +704,13 @@ export const tickFleetState = (fleet: FleetRuntimeState, now: number): void => {
     }
 
     updateBaseMetrics(robot)
+    updateSensorRecovery(robot)
     updateMissionProgress(fleet, robot)
     applyTransitions(fleet, robot)
+    applyAnomalies(fleet, robot, result)
   }
+
+  return result
 }
 
 export const summarizeFleetStatuses = (fleet: FleetRuntimeState): Record<RobotStatus, number> => {
