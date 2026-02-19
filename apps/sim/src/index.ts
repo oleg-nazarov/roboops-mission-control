@@ -1,92 +1,159 @@
-import { WebSocket, WebSocketServer } from 'ws'
+import { WebSocket, WebSocketServer, type RawData } from 'ws'
 import { z } from 'zod'
-import type { Event as OpsEvent, Incident as OpsIncident } from '@roboops/contracts'
 import {
-  createTelemetrySnapshot,
+  eventSchema,
+  incidentSchema,
+  opsModeSchema,
+  telemetrySchema,
+  type Event as OpsEvent,
+  type Incident as OpsIncident,
+  type OpsMode,
+  type Telemetry,
+} from '@roboops/contracts'
+import {
+  createFleetSnapshotPayload,
   createFleetState,
+  createTelemetrySnapshot,
   getRandomTickDelay,
   summarizeFleetStatuses,
   summarizeMissionTypes,
   switchFleetMode,
   tickFleetState,
+  type FleetSnapshotPayload,
 } from './fleet.js'
 import { createRunLogger } from './run-logger.js'
 
 const envSchema = z.object({
   SIM_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
-  PING_INTERVAL_MS: z.coerce.number().int().min(250).default(3000),
-  SIM_MODE: z.enum(['DELIVERY', 'WAREHOUSE']).default('DELIVERY'),
+  HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(250).optional(),
+  PING_INTERVAL_MS: z.coerce.number().int().min(250).optional(),
+  SIM_MODE: opsModeSchema.default('DELIVERY'),
   MODE_SWITCH_INTERVAL_MS: z.coerce.number().int().min(1000).optional(),
   ROBOT_COUNT: z.coerce.number().int().min(6).max(20).default(12),
   FLEET_TICK_MIN_MS: z.coerce.number().int().min(200).default(200),
   FLEET_TICK_MAX_MS: z.coerce.number().int().min(200).default(500),
   FLEET_LOG_INTERVAL_MS: z.coerce.number().int().min(500).default(5000),
+  STREAM_HISTORY_MAX: z.coerce.number().int().min(100).max(50000).default(2000),
   SIM_EXIT_AFTER_MS: z.coerce.number().int().positive().optional(),
 })
 
 const env = envSchema.parse({
   SIM_PORT: process.env.SIM_PORT ?? '8090',
-  PING_INTERVAL_MS: process.env.PING_INTERVAL_MS ?? '3000',
+  HEARTBEAT_INTERVAL_MS: process.env.HEARTBEAT_INTERVAL_MS,
+  PING_INTERVAL_MS: process.env.PING_INTERVAL_MS,
   SIM_MODE: process.env.SIM_MODE ?? 'DELIVERY',
   MODE_SWITCH_INTERVAL_MS: process.env.MODE_SWITCH_INTERVAL_MS,
   ROBOT_COUNT: process.env.ROBOT_COUNT ?? '12',
   FLEET_TICK_MIN_MS: process.env.FLEET_TICK_MIN_MS ?? '200',
   FLEET_TICK_MAX_MS: process.env.FLEET_TICK_MAX_MS ?? '500',
   FLEET_LOG_INTERVAL_MS: process.env.FLEET_LOG_INTERVAL_MS ?? '5000',
+  STREAM_HISTORY_MAX: process.env.STREAM_HISTORY_MAX ?? '2000',
   SIM_EXIT_AFTER_MS: process.env.SIM_EXIT_AFTER_MS,
 })
+
+const heartbeatIntervalMs = env.HEARTBEAT_INTERVAL_MS ?? env.PING_INTERVAL_MS ?? 3000
 
 const pingInboundMessageSchema = z.object({
   type: z.literal('ping'),
   clientTs: z.number().optional(),
 })
 
+const resumeInboundMessageSchema = z.object({
+  type: z.literal('resume'),
+  lastStreamSeq: z.number().int().nonnegative(),
+})
+
 const setModeInboundMessageSchema = z.object({
   type: z.literal('set_mode'),
-  mode: z.enum(['DELIVERY', 'WAREHOUSE']),
+  mode: opsModeSchema,
 })
 
 const inboundMessageSchema = z.discriminatedUnion('type', [
   pingInboundMessageSchema,
+  resumeInboundMessageSchema,
   setModeInboundMessageSchema,
 ])
 
-const connectedMessageSchema = z.object({
-  type: z.literal('connected'),
-  serverTs: z.number(),
-  message: z.string(),
-})
+type SnapshotMessage = {
+  type: 'snapshot'
+  streamSeq: number
+  serverTs: number
+  payload: FleetSnapshotPayload
+}
 
-const pingMessageSchema = z.object({
-  type: z.literal('ping'),
-  seq: z.number().int().nonnegative(),
-  serverTs: z.number(),
-})
+type TelemetryMessage = {
+  type: 'telemetry'
+  streamSeq: number
+  serverTs: number
+  payload: Telemetry
+}
 
-const pongMessageSchema = z.object({
-  type: z.literal('pong'),
-  serverTs: z.number(),
-})
+type EventMessage = {
+  type: 'event'
+  streamSeq: number
+  serverTs: number
+  payload: OpsEvent
+}
 
-const modeChangedMessageSchema = z.object({
-  type: z.literal('mode_changed'),
-  mode: z.enum(['DELIVERY', 'WAREHOUSE']),
-  serverTs: z.number(),
-})
+type IncidentMessage = {
+  type: 'incident'
+  streamSeq: number
+  serverTs: number
+  payload: OpsIncident
+}
+
+type HeartbeatMessage = {
+  type: 'heartbeat'
+  streamSeq: number
+  serverTs: number
+  payload: {
+    tick: number
+    mode: OpsMode
+    connectedClients: number
+    runId: string
+    reason?: string
+    replyToClientTs?: number
+  }
+}
 
 type OutboundMessage =
-  | z.infer<typeof connectedMessageSchema>
-  | z.infer<typeof pingMessageSchema>
-  | z.infer<typeof pongMessageSchema>
-  | OpsEvent
-  | OpsIncident
-  | z.infer<typeof modeChangedMessageSchema>
+  | SnapshotMessage
+  | TelemetryMessage
+  | EventMessage
+  | IncidentMessage
+  | HeartbeatMessage
 
 const wss = new WebSocketServer({ port: env.SIM_PORT })
 const fleetState = createFleetState(env.ROBOT_COUNT, Date.now(), env.SIM_MODE)
 const runLogger = createRunLogger()
-let pingSequence = 0
+const messageHistory: OutboundMessage[] = []
+let streamSequence = 0
 let fleetTickTimer: NodeJS.Timeout | undefined
+let isShuttingDown = false
+
+const currentStreamSeq = (): number => streamSequence
+
+const nextStreamSeq = (): number => {
+  streamSequence += 1
+  return streamSequence
+}
+
+const pushHistory = (message: OutboundMessage): void => {
+  messageHistory.push(message)
+  if (messageHistory.length > env.STREAM_HISTORY_MAX) {
+    messageHistory.splice(0, messageHistory.length - env.STREAM_HISTORY_MAX)
+  }
+}
+
+const countConnectedClients = (): number => {
+  let count = 0
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      count += 1
+    }
+  }
+  return count
+}
 
 const sendJson = (socket: WebSocket, payload: OutboundMessage): void => {
   if (socket.readyState !== WebSocket.OPEN) {
@@ -96,42 +163,190 @@ const sendJson = (socket: WebSocket, payload: OutboundMessage): void => {
   socket.send(JSON.stringify(payload))
 }
 
+const broadcast = (payload: OutboundMessage): void => {
+  for (const client of wss.clients) {
+    sendJson(client, payload)
+  }
+}
+
+const publish = (payload: OutboundMessage): void => {
+  pushHistory(payload)
+  broadcast(payload)
+}
+
+const buildSnapshotMessage = (): SnapshotMessage => ({
+  type: 'snapshot',
+  streamSeq: nextStreamSeq(),
+  serverTs: Date.now(),
+  payload: createFleetSnapshotPayload(fleetState),
+})
+
+const buildDirectSnapshotMessage = (): SnapshotMessage => ({
+  type: 'snapshot',
+  streamSeq: currentStreamSeq(),
+  serverTs: Date.now(),
+  payload: createFleetSnapshotPayload(fleetState),
+})
+
+const buildTelemetryMessage = (telemetry: Telemetry): TelemetryMessage => ({
+  type: 'telemetry',
+  streamSeq: nextStreamSeq(),
+  serverTs: Date.now(),
+  payload: telemetrySchema.parse(telemetry),
+})
+
+const buildEventMessage = (event: OpsEvent): EventMessage => ({
+  type: 'event',
+  streamSeq: nextStreamSeq(),
+  serverTs: Date.now(),
+  payload: eventSchema.parse(event),
+})
+
+const buildIncidentMessage = (incident: OpsIncident): IncidentMessage => ({
+  type: 'incident',
+  streamSeq: nextStreamSeq(),
+  serverTs: Date.now(),
+  payload: incidentSchema.parse(incident),
+})
+
+const buildHeartbeatMessage = (input?: {
+  reason?: string
+  replyToClientTs?: number
+}): HeartbeatMessage => ({
+  type: 'heartbeat',
+  streamSeq: nextStreamSeq(),
+  serverTs: Date.now(),
+  payload: {
+    tick: fleetState.tick,
+    mode: fleetState.mode,
+    connectedClients: countConnectedClients(),
+    runId: runLogger.runId,
+    reason: input?.reason,
+    replyToClientTs: input?.replyToClientTs,
+  },
+})
+
+const buildDirectHeartbeatMessage = (input?: {
+  reason?: string
+  replyToClientTs?: number
+}): HeartbeatMessage => ({
+  type: 'heartbeat',
+  streamSeq: currentStreamSeq(),
+  serverTs: Date.now(),
+  payload: {
+    tick: fleetState.tick,
+    mode: fleetState.mode,
+    connectedClients: countConnectedClients(),
+    runId: runLogger.runId,
+    reason: input?.reason,
+    replyToClientTs: input?.replyToClientTs,
+  },
+})
+
+const publishSnapshot = (): void => {
+  publish(buildSnapshotMessage())
+}
+
+const publishTelemetry = (telemetry: Telemetry): void => {
+  publish(buildTelemetryMessage(telemetry))
+}
+
+const publishEvent = (event: OpsEvent): void => {
+  publish(buildEventMessage(event))
+}
+
+const publishIncident = (incident: OpsIncident): void => {
+  publish(buildIncidentMessage(incident))
+}
+
+const publishHeartbeat = (input?: {
+  reason?: string
+  replyToClientTs?: number
+}): void => {
+  publish(buildHeartbeatMessage(input))
+}
+
 const buildSystemEvent = (
   eventType: string,
   message: string,
   meta: Record<string, unknown> = {},
-): OpsEvent => ({
-  type: 'event',
-  ts: Date.now(),
-  robotId: 'SIM',
-  level: 'INFO',
-  eventType,
-  message,
-  meta: {
-    mode: fleetState.mode,
-    ...meta,
-  },
-})
+): OpsEvent =>
+  eventSchema.parse({
+    type: 'event',
+    ts: Date.now(),
+    robotId: 'SIM',
+    level: 'INFO',
+    eventType,
+    message,
+    meta: {
+      mode: fleetState.mode,
+      ...meta,
+    },
+  })
 
 const publishSystemEvent = (event: OpsEvent): void => {
   runLogger.logEventBatch([event])
-  for (const client of wss.clients) {
-    sendJson(client, event)
+  publishEvent(event)
+}
+
+const toText = (rawMessage: RawData): string => {
+  if (typeof rawMessage === 'string') {
+    return rawMessage
+  }
+
+  if (Array.isArray(rawMessage)) {
+    return Buffer.concat(rawMessage).toString('utf-8')
+  }
+
+  if (rawMessage instanceof ArrayBuffer) {
+    return Buffer.from(rawMessage).toString('utf-8')
+  }
+
+  return rawMessage.toString()
+}
+
+const tryParseInboundMessage = (
+  rawMessage: RawData,
+): z.infer<typeof inboundMessageSchema> | undefined => {
+  try {
+    const parsed = JSON.parse(toText(rawMessage)) as unknown
+    const message = inboundMessageSchema.safeParse(parsed)
+    if (!message.success) {
+      return undefined
+    }
+    return message.data
+  } catch {
+    return undefined
   }
 }
 
-const broadcastPing = (): void => {
-  const pingEvent = pingMessageSchema.parse({
-    type: 'ping',
-    seq: pingSequence,
-    serverTs: Date.now(),
-  })
-
-  for (const client of wss.clients) {
-    sendJson(client, pingEvent)
+const replayFrom = (socket: WebSocket, lastStreamSeq: number): void => {
+  if (messageHistory.length === 0) {
+    sendJson(socket, buildDirectSnapshotMessage())
+    sendJson(socket, buildDirectHeartbeatMessage({ reason: 'resume-empty-history' }))
+    return
   }
 
-  pingSequence += 1
+  const oldestSeq = messageHistory[0].streamSeq
+  const newestSeq = messageHistory[messageHistory.length - 1].streamSeq
+
+  if (lastStreamSeq < oldestSeq - 1 || lastStreamSeq > newestSeq) {
+    sendJson(socket, buildDirectSnapshotMessage())
+    sendJson(socket, buildDirectHeartbeatMessage({ reason: 'resume-out-of-range' }))
+    return
+  }
+
+  let replayCount = 0
+  for (const message of messageHistory) {
+    if (message.streamSeq > lastStreamSeq) {
+      sendJson(socket, message)
+      replayCount += 1
+    }
+  }
+
+  if (replayCount === 0) {
+    sendJson(socket, buildDirectHeartbeatMessage({ reason: 'resume-no-gap' }))
+  }
 }
 
 const scheduleFleetTick = (): void => {
@@ -141,17 +356,19 @@ const scheduleFleetTick = (): void => {
   runLogger.logTelemetryBatch(telemetryBatch)
   runLogger.logEventBatch(tickResult.events)
 
+  for (const telemetry of telemetryBatch) {
+    publishTelemetry(telemetry)
+  }
+
+  for (const event of tickResult.events) {
+    publishEvent(event)
+  }
+
+  for (const incident of tickResult.incidents) {
+    publishIncident(incident)
+  }
+
   if (tickResult.events.length > 0 || tickResult.incidents.length > 0) {
-    for (const client of wss.clients) {
-      for (const event of tickResult.events) {
-        sendJson(client, event)
-      }
-
-      for (const incident of tickResult.incidents) {
-        sendJson(client, incident)
-      }
-    }
-
     console.log(
       `[sim] anomaly burst events=${tickResult.events.length} incidents=${tickResult.incidents.length}`,
     )
@@ -167,58 +384,42 @@ wss.on('connection', (socket, request) => {
   const remoteAddress = request.socket.remoteAddress ?? 'unknown'
   console.log(`[sim] client connected from ${remoteAddress}`)
 
-  const connectedEvent = connectedMessageSchema.parse({
-    type: 'connected',
-    serverTs: Date.now(),
-    message: 'RoboOps simulator connected',
-  })
-
-  sendJson(socket, connectedEvent)
-  broadcastPing()
+  sendJson(socket, buildDirectSnapshotMessage())
+  sendJson(socket, buildDirectHeartbeatMessage({ reason: 'connected' }))
 
   socket.on('message', (rawMessage) => {
-    try {
-      const message = JSON.parse(rawMessage.toString()) as unknown
-      const parsed = inboundMessageSchema.safeParse(message)
-
-      if (!parsed.success) {
-        return
-      }
-
-      if (parsed.data.type === 'ping') {
-        const pongEvent = pongMessageSchema.parse({
-          type: 'pong',
-          serverTs: Date.now(),
-        })
-        sendJson(socket, pongEvent)
-        return
-      }
-
-      if (parsed.data.type === 'set_mode') {
-        const switched = switchFleetMode(fleetState, parsed.data.mode, Date.now())
-        if (!switched) {
-          return
-        }
-
-        publishSystemEvent(
-          buildSystemEvent('MODE_SWITCH', `Simulation mode switched to ${fleetState.mode}`, {
-            requestedBy: 'ws_client',
-          }),
-        )
-
-        const modeChangedEvent = modeChangedMessageSchema.parse({
-          type: 'mode_changed',
-          mode: fleetState.mode,
-          serverTs: Date.now(),
-        })
-
-        for (const client of wss.clients) {
-          sendJson(client, modeChangedEvent)
-        }
-      }
-    } catch {
+    const message = tryParseInboundMessage(rawMessage)
+    if (!message) {
       return
     }
+
+    if (message.type === 'ping') {
+      sendJson(
+        socket,
+        buildDirectHeartbeatMessage({
+          reason: 'ping',
+          replyToClientTs: message.clientTs,
+        }),
+      )
+      return
+    }
+
+    if (message.type === 'resume') {
+      replayFrom(socket, message.lastStreamSeq)
+      return
+    }
+
+    const switched = switchFleetMode(fleetState, message.mode, Date.now())
+    if (!switched) {
+      return
+    }
+
+    publishSystemEvent(
+      buildSystemEvent('MODE_SWITCH', `Simulation mode switched to ${fleetState.mode}`, {
+        requestedBy: 'ws_client',
+      }),
+    )
+    publishSnapshot()
   })
 
   socket.on('close', () => {
@@ -226,7 +427,10 @@ wss.on('connection', (socket, request) => {
   })
 })
 
-const pingTimer = setInterval(broadcastPing, env.PING_INTERVAL_MS)
+const heartbeatTimer = setInterval(() => {
+  publishHeartbeat()
+}, heartbeatIntervalMs)
+
 const fleetLogTimer = setInterval(() => {
   const status = summarizeFleetStatuses(fleetState)
   const missionTypes = summarizeMissionTypes(fleetState)
@@ -237,6 +441,7 @@ const fleetLogTimer = setInterval(() => {
       `missions: DELIVERY=${missionTypes.DELIVERY} MOVE=${missionTypes.MOVE} BRING=${missionTypes.BRING} PICK=${missionTypes.PICK}`,
   )
 }, env.FLEET_LOG_INTERVAL_MS)
+
 const modeSwitchTimer =
   env.MODE_SWITCH_INTERVAL_MS === undefined
     ? undefined
@@ -250,16 +455,23 @@ const modeSwitchTimer =
               requestedBy: 'auto_timer',
             }),
           )
+          publishSnapshot()
         }
       }, env.MODE_SWITCH_INTERVAL_MS)
+
 scheduleFleetTick()
 
 const shutdown = (signal: string): void => {
+  if (isShuttingDown) {
+    return
+  }
+  isShuttingDown = true
+
   console.log(`[sim] shutdown requested by ${signal}`)
   if (fleetTickTimer) {
     clearTimeout(fleetTickTimer)
   }
-  clearInterval(pingTimer)
+  clearInterval(heartbeatTimer)
   clearInterval(fleetLogTimer)
   if (modeSwitchTimer) {
     clearInterval(modeSwitchTimer)
@@ -285,13 +497,13 @@ if (env.SIM_EXIT_AFTER_MS) {
 }
 
 console.log(`[sim] ws server listening at ws://localhost:${env.SIM_PORT}`)
-console.log(`[sim] ping interval: ${env.PING_INTERVAL_MS}ms`)
+console.log(`[sim] heartbeat interval: ${heartbeatIntervalMs}ms`)
 console.log(`[sim] run session: ${runLogger.runId}`)
 console.log(`[sim] run log file: ${runLogger.filePath}`)
 console.log(
   `[sim] fleet generator: mode=${fleetState.mode}, robots=${fleetState.robots.length}, ` +
     `tickRange=${env.FLEET_TICK_MIN_MS}-${env.FLEET_TICK_MAX_MS}ms, ` +
-    `modeSwitch=${env.MODE_SWITCH_INTERVAL_MS ?? 'disabled'}`,
+    `modeSwitch=${env.MODE_SWITCH_INTERVAL_MS ?? 'disabled'}, history=${env.STREAM_HISTORY_MAX}`,
 )
 
 publishSystemEvent(
@@ -300,3 +512,5 @@ publishSystemEvent(
     robotCount: fleetState.robots.length,
   }),
 )
+publishSnapshot()
+publishHeartbeat({ reason: 'session-started' })

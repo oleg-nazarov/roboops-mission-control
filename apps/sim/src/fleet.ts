@@ -122,6 +122,47 @@ export type FleetTickResult = {
   incidents: OpsIncident[]
 }
 
+export type FleetRobotSnapshot = {
+  robotId: string
+  status: RobotStatus
+  battery: number
+  temp: number
+  speed: number
+  localizationConfidence: number
+  lastHeartbeatTs: number
+  missionId: string | null
+  missionProgress: number | null
+  faults24h: number
+  pose: {
+    x: number
+    y: number
+    heading: number
+  }
+  sensors: Record<SensorKey, SensorHealth>
+}
+
+export type FleetMissionSnapshot = {
+  missionId: string
+  robotId: string
+  mode: OpsMode
+  missionType: MissionType
+  status: MissionStatus
+  progress: number
+  target: Waypoint
+}
+
+export type FleetSnapshotPayload = {
+  mode: OpsMode
+  tick: number
+  updatedAtTs: number
+  robotCount: number
+  missionCount: number
+  statusSummary: Record<RobotStatus, number>
+  missionTypeSummary: Record<MissionType, number>
+  robots: FleetRobotSnapshot[]
+  missions: FleetMissionSnapshot[]
+}
+
 const assignMissionId = (fleet: FleetRuntimeState): string => {
   const missionId = `MSN-${String(fleet.nextMissionSeq).padStart(5, '0')}`
   fleet.nextMissionSeq += 1
@@ -745,6 +786,66 @@ export const summarizeMissionTypes = (fleet: FleetRuntimeState): Record<MissionT
   }
 
   return summary
+}
+
+export const createFleetSnapshotPayload = (fleet: FleetRuntimeState): FleetSnapshotPayload => {
+  const missions = [...fleet.missions.values()]
+    .filter((mission) => mission.status === 'ACTIVE' || mission.status === 'PAUSED')
+    .map(
+      (mission): FleetMissionSnapshot => ({
+        missionId: mission.missionId,
+        robotId: mission.robotId,
+        mode: mission.mode,
+        missionType: mission.missionType,
+        status: mission.status,
+        progress: Number(mission.progress.toFixed(2)),
+        target: {
+          x: Number(mission.target.x.toFixed(3)),
+          y: Number(mission.target.y.toFixed(3)),
+        },
+      }),
+    )
+
+  const missionProgressByRobot = new Map<string, number>()
+  for (const mission of missions) {
+    missionProgressByRobot.set(mission.robotId, mission.progress)
+  }
+
+  const robots: FleetRobotSnapshot[] = fleet.robots.map((robot) => ({
+    robotId: robot.robotId,
+    status: robot.status,
+    battery: Number(robot.battery.toFixed(2)),
+    temp: Number(robot.temp.toFixed(2)),
+    speed: Number(robot.speed.toFixed(3)),
+    localizationConfidence: Number(robot.localizationConfidence.toFixed(3)),
+    lastHeartbeatTs: robot.lastHeartbeatTs,
+    missionId: robot.missionId ?? null,
+    missionProgress: missionProgressByRobot.get(robot.robotId) ?? null,
+    faults24h: robot.faults24h,
+    pose: {
+      x: Number(robot.pose.x.toFixed(3)),
+      y: Number(robot.pose.y.toFixed(3)),
+      heading: Number(robot.pose.heading.toFixed(4)),
+    },
+    sensors: {
+      lidar: robot.sensors.lidar,
+      cam: robot.sensors.cam,
+      gps: robot.sensors.gps,
+      imu: robot.sensors.imu,
+    },
+  }))
+
+  return {
+    mode: fleet.mode,
+    tick: fleet.tick,
+    updatedAtTs: fleet.updatedAtTs,
+    robotCount: robots.length,
+    missionCount: missions.length,
+    statusSummary: summarizeFleetStatuses(fleet),
+    missionTypeSummary: summarizeMissionTypes(fleet),
+    robots,
+    missions,
+  }
 }
 
 export const createTelemetrySnapshot = (fleet: FleetRuntimeState): Telemetry[] =>

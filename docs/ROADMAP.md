@@ -106,13 +106,13 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Start a new file for each simulator run
 
 ### Task 011 - WebSocket streaming protocol
-- [ ] Define message types:
-  - [ ] `snapshot` (initial fleet state)
-  - [ ] `telemetry`
-  - [ ] `event`
-  - [ ] `incident`
-  - [ ] `heartbeat`
-- [ ] Make stream reconnect-safe with server timestamp
+- [x] Define message types:
+  - [x] `snapshot` (initial fleet state)
+  - [x] `telemetry`
+  - [x] `event`
+  - [x] `incident`
+  - [x] `heartbeat`
+- [x] Make stream reconnect-safe with server timestamp
 
 ## Phase 2 - Frontend Skeleton and State
 
