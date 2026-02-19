@@ -1,4 +1,4 @@
-import type { RobotStatus } from '@roboops/contracts'
+import type { MissionStatus, MissionType, OpsMode, RobotStatus } from '@roboops/contracts'
 
 const STATUS_ORDER: RobotStatus[] = [
   'IDLE',
@@ -7,6 +7,8 @@ const STATUS_ORDER: RobotStatus[] = [
   'FAULT',
   'OFFLINE',
 ]
+
+const WAREHOUSE_MISSION_TYPES: MissionType[] = ['MOVE', 'BRING', 'PICK']
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value))
@@ -19,6 +21,33 @@ const randomInt = (min: number, max: number): number =>
 const randomHeadingDelta = (): number => randomFloat(-0.2, 0.2)
 
 const formatRobotId = (index: number): string => `RBT-${String(index + 1).padStart(3, '0')}`
+
+const randomMissionTypeForMode = (mode: OpsMode): MissionType => {
+  if (mode === 'DELIVERY') {
+    return 'DELIVERY'
+  }
+
+  const index = randomInt(0, WAREHOUSE_MISSION_TYPES.length - 1)
+  return WAREHOUSE_MISSION_TYPES[index]
+}
+
+export type Waypoint = {
+  x: number
+  y: number
+}
+
+export type MissionRuntimeState = {
+  missionId: string
+  robotId: string
+  mode: OpsMode
+  missionType: MissionType
+  status: MissionStatus
+  progress: number
+  waypoints: Waypoint[]
+  target: Waypoint
+  createdAtTs: number
+  updatedAtTs: number
+}
 
 export type RobotRuntimeState = {
   robotId: string
@@ -39,38 +68,162 @@ export type RobotRuntimeState = {
 }
 
 export type FleetRuntimeState = {
+  mode: OpsMode
   robots: RobotRuntimeState[]
+  missions: Map<string, MissionRuntimeState>
   tick: number
   updatedAtTs: number
+  modeChangedAtTs: number
   nextMissionSeq: number
 }
 
-const assignMission = (fleet: FleetRuntimeState): string => {
+const assignMissionId = (fleet: FleetRuntimeState): string => {
   const missionId = `MSN-${String(fleet.nextMissionSeq).padStart(5, '0')}`
   fleet.nextMissionSeq += 1
   return missionId
 }
 
+const createRoute = (mode: OpsMode, origin: Waypoint): { waypoints: Waypoint[]; target: Waypoint } => {
+  const waypointCount = mode === 'DELIVERY' ? randomInt(4, 7) : randomInt(3, 5)
+  const waypoints: Waypoint[] = []
+  let current = origin
+
+  for (let index = 0; index < waypointCount; index += 1) {
+    const next: Waypoint =
+      mode === 'DELIVERY'
+        ? {
+            x: clamp(current.x + randomFloat(-11, 14), 0, 100),
+            y: clamp(current.y + randomFloat(-11, 14), 0, 100),
+          }
+        : {
+            x: clamp(current.x + randomFloat(-8, 8), 0, 100),
+            y: clamp(current.y + (Math.random() < 0.5 ? 0 : randomFloat(-8, 8)), 0, 100),
+          }
+
+    waypoints.push(next)
+    current = next
+  }
+
+  return {
+    waypoints,
+    target: waypoints[waypoints.length - 1],
+  }
+}
+
+const getMissionForRobot = (
+  fleet: FleetRuntimeState,
+  robot: RobotRuntimeState,
+): MissionRuntimeState | undefined => {
+  if (!robot.missionId) {
+    return undefined
+  }
+
+  return fleet.missions.get(robot.missionId)
+}
+
+const createMissionForRobot = (
+  fleet: FleetRuntimeState,
+  robot: RobotRuntimeState,
+  now: number,
+  initialStatus: MissionStatus,
+): MissionRuntimeState => {
+  const existingMission = getMissionForRobot(fleet, robot)
+
+  if (existingMission && (existingMission.status === 'ACTIVE' || existingMission.status === 'PAUSED')) {
+    existingMission.status = 'CANCELLED'
+    existingMission.updatedAtTs = now
+  }
+
+  const missionId = assignMissionId(fleet)
+  const route = createRoute(fleet.mode, { x: robot.pose.x, y: robot.pose.y })
+
+  const mission: MissionRuntimeState = {
+    missionId,
+    robotId: robot.robotId,
+    mode: fleet.mode,
+    missionType: randomMissionTypeForMode(fleet.mode),
+    status: initialStatus,
+    progress: 0,
+    waypoints: route.waypoints,
+    target: route.target,
+    createdAtTs: now,
+    updatedAtTs: now,
+  }
+
+  fleet.missions.set(missionId, mission)
+  robot.missionId = missionId
+  return mission
+}
+
+const ensureMissionForRobot = (
+  fleet: FleetRuntimeState,
+  robot: RobotRuntimeState,
+  now: number,
+  initialStatus: MissionStatus,
+): MissionRuntimeState => {
+  const existing = getMissionForRobot(fleet, robot)
+  if (existing) {
+    return existing
+  }
+
+  return createMissionForRobot(fleet, robot, now, initialStatus)
+}
+
 const setStatus = (fleet: FleetRuntimeState, robot: RobotRuntimeState, status: RobotStatus): void => {
   robot.status = status
+  const now = fleet.updatedAtTs
 
   if (status === 'ON_MISSION') {
-    robot.missionId = robot.missionId ?? assignMission(fleet)
-    robot.speed = randomFloat(0.6, 1.6)
+    const mission = ensureMissionForRobot(fleet, robot, now, 'ACTIVE')
+    mission.status = 'ACTIVE'
+    mission.updatedAtTs = now
+    robot.speed = randomFloat(0.6, 1.8)
+    robot.offlineUntilTs = undefined
+    return
+  }
+
+  if (status === 'NEED_ASSIST') {
+    const mission = ensureMissionForRobot(fleet, robot, now, 'PAUSED')
+    mission.status = 'PAUSED'
+    mission.updatedAtTs = now
+    robot.speed = 0
+    robot.offlineUntilTs = undefined
+    return
+  }
+
+  if (status === 'FAULT') {
+    const mission = getMissionForRobot(fleet, robot)
+    if (mission) {
+      mission.status = 'FAILED'
+      mission.updatedAtTs = now
+    }
+    robot.speed = 0
+    robot.missionId = undefined
+    robot.offlineUntilTs = undefined
     return
   }
 
   if (status === 'OFFLINE') {
     robot.speed = 0
-    robot.offlineUntilTs = fleet.updatedAtTs + randomInt(6_000, 12_000)
+    robot.offlineUntilTs = now + randomInt(6_000, 12_000)
+    const mission = getMissionForRobot(fleet, robot)
+    if (mission && mission.status === 'ACTIVE') {
+      mission.status = 'PAUSED'
+      mission.updatedAtTs = now
+    }
     return
   }
 
-  robot.offlineUntilTs = undefined
-  robot.speed = 0
-  if (status !== 'NEED_ASSIST') {
-    robot.missionId = undefined
+  const mission = getMissionForRobot(fleet, robot)
+  if (mission && mission.status !== 'COMPLETED' && mission.status !== 'FAILED') {
+    mission.status = 'COMPLETED'
+    mission.progress = Math.max(mission.progress, 100)
+    mission.updatedAtTs = now
   }
+
+  robot.speed = 0
+  robot.missionId = undefined
+  robot.offlineUntilTs = undefined
 }
 
 const updateBaseMetrics = (robot: RobotRuntimeState): void => {
@@ -82,10 +235,6 @@ const updateBaseMetrics = (robot: RobotRuntimeState): void => {
       0.7,
       1,
     )
-
-    robot.pose.heading = (robot.pose.heading + randomHeadingDelta() + Math.PI * 2) % (Math.PI * 2)
-    robot.pose.x += Math.cos(robot.pose.heading) * robot.speed * 0.15
-    robot.pose.y += Math.sin(robot.pose.heading) * robot.speed * 0.15
     return
   }
 
@@ -122,6 +271,44 @@ const updateBaseMetrics = (robot: RobotRuntimeState): void => {
   }
 }
 
+const updateMissionProgress = (fleet: FleetRuntimeState, robot: RobotRuntimeState): void => {
+  if (robot.status !== 'ON_MISSION') {
+    return
+  }
+
+  const mission = ensureMissionForRobot(fleet, robot, fleet.updatedAtTs, 'ACTIVE')
+  mission.mode = fleet.mode
+  mission.updatedAtTs = fleet.updatedAtTs
+  mission.status = 'ACTIVE'
+  mission.progress = clamp(mission.progress + randomFloat(1.8, 5.6), 0, 100)
+
+  const waypointIndex = Math.min(
+    mission.waypoints.length - 1,
+    Math.floor((mission.progress / 100) * mission.waypoints.length),
+  )
+  mission.target = mission.waypoints[waypointIndex]
+
+  const dx = mission.target.x - robot.pose.x
+  const dy = mission.target.y - robot.pose.y
+  const distance = Math.hypot(dx, dy)
+  if (distance > 0.0001) {
+    robot.pose.heading = Math.atan2(dy, dx)
+    const step = Math.min(distance, robot.speed * 0.2)
+    robot.pose.x += (dx / distance) * step
+    robot.pose.y += (dy / distance) * step
+  } else {
+    robot.pose.heading = (robot.pose.heading + randomHeadingDelta() + Math.PI * 2) % (Math.PI * 2)
+  }
+
+  if (mission.progress >= 100) {
+    mission.status = 'COMPLETED'
+    mission.updatedAtTs = fleet.updatedAtTs
+    robot.missionId = undefined
+    robot.status = 'IDLE'
+    robot.speed = 0
+  }
+}
+
 const applyTransitions = (fleet: FleetRuntimeState, robot: RobotRuntimeState): void => {
   if (robot.status === 'OFFLINE') {
     if ((robot.offlineUntilTs ?? 0) <= fleet.updatedAtTs) {
@@ -135,51 +322,59 @@ const applyTransitions = (fleet: FleetRuntimeState, robot: RobotRuntimeState): v
     return
   }
 
-  if (robot.status === 'IDLE' && Math.random() < 0.09) {
+  if (robot.status === 'IDLE' && Math.random() < 0.08) {
     setStatus(fleet, robot, 'ON_MISSION')
     return
   }
 
-  if (robot.status === 'ON_MISSION' && Math.random() < 0.04) {
-    setStatus(fleet, robot, 'IDLE')
-    return
-  }
-
-  if (robot.status === 'ON_MISSION' && Math.random() < 0.02) {
+  if (robot.status === 'ON_MISSION' && Math.random() < 0.017) {
     setStatus(fleet, robot, 'NEED_ASSIST')
     return
   }
 
-  if (robot.status === 'NEED_ASSIST' && Math.random() < 0.22) {
+  if (robot.status === 'ON_MISSION' && Math.random() < 0.02) {
+    setStatus(fleet, robot, 'IDLE')
+    return
+  }
+
+  if (robot.status === 'NEED_ASSIST' && Math.random() < 0.2) {
     setStatus(fleet, robot, 'ON_MISSION')
+    return
+  }
+
+  if (robot.status !== 'FAULT' && Math.random() < 0.006) {
+    robot.faults24h += 1
+    setStatus(fleet, robot, 'FAULT')
     return
   }
 
   if (robot.status === 'FAULT' && Math.random() < 0.18) {
     setStatus(fleet, robot, 'IDLE')
-    return
-  }
-
-  if (robot.status !== 'FAULT' && Math.random() < 0.007) {
-    robot.faults24h += 1
-    setStatus(fleet, robot, 'FAULT')
   }
 }
 
-export const createFleetState = (requestedCount: number, now: number): FleetRuntimeState => {
+export const createFleetState = (
+  requestedCount: number,
+  now: number,
+  mode: OpsMode,
+): FleetRuntimeState => {
   const robotCount = clamp(Math.round(requestedCount), 6, 20)
   const state: FleetRuntimeState = {
+    mode,
     robots: [],
+    missions: new Map<string, MissionRuntimeState>(),
     tick: 0,
     updatedAtTs: now,
+    modeChangedAtTs: now,
     nextMissionSeq: 1,
   }
 
   for (let index = 0; index < robotCount; index += 1) {
     const seededStatus = STATUS_ORDER[index % STATUS_ORDER.length]
+
     const robot: RobotRuntimeState = {
       robotId: formatRobotId(index),
-      status: seededStatus,
+      status: 'IDLE',
       battery: randomFloat(45, 95),
       temp: randomFloat(28, 45),
       speed: 0,
@@ -193,19 +388,53 @@ export const createFleetState = (requestedCount: number, now: number): FleetRunt
       },
     }
 
+    state.robots.push(robot)
+
     if (seededStatus === 'ON_MISSION') {
-      robot.missionId = assignMission(state)
-      robot.speed = randomFloat(0.7, 1.5)
+      setStatus(state, robot, 'ON_MISSION')
+      continue
+    }
+
+    if (seededStatus === 'NEED_ASSIST') {
+      setStatus(state, robot, 'ON_MISSION')
+      setStatus(state, robot, 'NEED_ASSIST')
+      continue
+    }
+
+    if (seededStatus === 'FAULT') {
+      setStatus(state, robot, 'FAULT')
+      continue
     }
 
     if (seededStatus === 'OFFLINE') {
-      robot.offlineUntilTs = now + randomInt(4_000, 10_000)
+      setStatus(state, robot, 'OFFLINE')
     }
-
-    state.robots.push(robot)
   }
 
   return state
+}
+
+export const switchFleetMode = (fleet: FleetRuntimeState, mode: OpsMode, now: number): boolean => {
+  if (fleet.mode === mode) {
+    return false
+  }
+
+  fleet.mode = mode
+  fleet.modeChangedAtTs = now
+  fleet.updatedAtTs = now
+
+  for (const robot of fleet.robots) {
+    if (robot.status === 'ON_MISSION') {
+      createMissionForRobot(fleet, robot, now, 'ACTIVE')
+      continue
+    }
+
+    if (robot.status === 'NEED_ASSIST') {
+      createMissionForRobot(fleet, robot, now, 'PAUSED')
+    }
+  }
+
+  return true
 }
 
 export const tickFleetState = (fleet: FleetRuntimeState, now: number): void => {
@@ -218,6 +447,7 @@ export const tickFleetState = (fleet: FleetRuntimeState, now: number): void => {
     }
 
     updateBaseMetrics(robot)
+    updateMissionProgress(fleet, robot)
     applyTransitions(fleet, robot)
   }
 }
@@ -233,6 +463,23 @@ export const summarizeFleetStatuses = (fleet: FleetRuntimeState): Record<RobotSt
 
   for (const robot of fleet.robots) {
     summary[robot.status] += 1
+  }
+
+  return summary
+}
+
+export const summarizeMissionTypes = (fleet: FleetRuntimeState): Record<MissionType, number> => {
+  const summary: Record<MissionType, number> = {
+    MOVE: 0,
+    BRING: 0,
+    PICK: 0,
+    DELIVERY: 0,
+  }
+
+  for (const mission of fleet.missions.values()) {
+    if (mission.status === 'ACTIVE' || mission.status === 'PAUSED') {
+      summary[mission.missionType] += 1
+    }
   }
 
   return summary

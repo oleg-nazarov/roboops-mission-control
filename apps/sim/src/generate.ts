@@ -42,11 +42,13 @@ const records = [
     ts: now + 750,
     missionId: 'MSN-001',
     robotId: 'RBT-001',
+    mode: 'DELIVERY',
     missionType: 'DELIVERY',
     waypoints: [
       { x: 8.5, y: 6.1 },
       { x: 12.4, y: 8.2 },
     ],
+    target: { x: 12.4, y: 8.2 },
     status: 'ACTIVE',
     progress: 42,
   }),

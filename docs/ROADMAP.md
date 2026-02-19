@@ -84,11 +84,11 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Update state every 200-500 ms
 
 ### Task 008 - Implement mission generator
-- [ ] Generate active missions for both modes:
-  - [ ] Delivery Rover Ops
-  - [ ] Warehouse AMR Ops
-- [ ] Add `progress`, `waypoints`, `target`
-- [ ] Add mode switch at simulation level
+- [x] Generate active missions for both modes:
+  - [x] Delivery Rover Ops
+  - [x] Warehouse AMR Ops
+- [x] Add `progress`, `waypoints`, `target`
+- [x] Add mode switch at simulation level
 
 ### Task 009 - Inject anomalies/incidents
 - [ ] Add probabilistic anomalies:

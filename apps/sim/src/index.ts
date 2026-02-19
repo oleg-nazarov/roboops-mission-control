@@ -1,10 +1,19 @@
 import { WebSocket, WebSocketServer } from 'ws'
 import { z } from 'zod'
-import { createFleetState, getRandomTickDelay, summarizeFleetStatuses, tickFleetState } from './fleet.js'
+import {
+  createFleetState,
+  getRandomTickDelay,
+  summarizeFleetStatuses,
+  summarizeMissionTypes,
+  switchFleetMode,
+  tickFleetState,
+} from './fleet.js'
 
 const envSchema = z.object({
   SIM_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
   PING_INTERVAL_MS: z.coerce.number().int().min(250).default(3000),
+  SIM_MODE: z.enum(['DELIVERY', 'WAREHOUSE']).default('DELIVERY'),
+  MODE_SWITCH_INTERVAL_MS: z.coerce.number().int().min(1000).optional(),
   ROBOT_COUNT: z.coerce.number().int().min(6).max(20).default(12),
   FLEET_TICK_MIN_MS: z.coerce.number().int().min(200).default(200),
   FLEET_TICK_MAX_MS: z.coerce.number().int().min(200).default(500),
@@ -15,6 +24,8 @@ const envSchema = z.object({
 const env = envSchema.parse({
   SIM_PORT: process.env.SIM_PORT ?? '8090',
   PING_INTERVAL_MS: process.env.PING_INTERVAL_MS ?? '3000',
+  SIM_MODE: process.env.SIM_MODE ?? 'DELIVERY',
+  MODE_SWITCH_INTERVAL_MS: process.env.MODE_SWITCH_INTERVAL_MS,
   ROBOT_COUNT: process.env.ROBOT_COUNT ?? '12',
   FLEET_TICK_MIN_MS: process.env.FLEET_TICK_MIN_MS ?? '200',
   FLEET_TICK_MAX_MS: process.env.FLEET_TICK_MAX_MS ?? '500',
@@ -22,10 +33,20 @@ const env = envSchema.parse({
   SIM_EXIT_AFTER_MS: process.env.SIM_EXIT_AFTER_MS,
 })
 
-const inboundMessageSchema = z.object({
-  type: z.enum(['ping']),
+const pingInboundMessageSchema = z.object({
+  type: z.literal('ping'),
   clientTs: z.number().optional(),
 })
+
+const setModeInboundMessageSchema = z.object({
+  type: z.literal('set_mode'),
+  mode: z.enum(['DELIVERY', 'WAREHOUSE']),
+})
+
+const inboundMessageSchema = z.discriminatedUnion('type', [
+  pingInboundMessageSchema,
+  setModeInboundMessageSchema,
+])
 
 const connectedMessageSchema = z.object({
   type: z.literal('connected'),
@@ -44,13 +65,20 @@ const pongMessageSchema = z.object({
   serverTs: z.number(),
 })
 
+const modeChangedMessageSchema = z.object({
+  type: z.literal('mode_changed'),
+  mode: z.enum(['DELIVERY', 'WAREHOUSE']),
+  serverTs: z.number(),
+})
+
 type OutboundMessage =
   | z.infer<typeof connectedMessageSchema>
   | z.infer<typeof pingMessageSchema>
   | z.infer<typeof pongMessageSchema>
+  | z.infer<typeof modeChangedMessageSchema>
 
 const wss = new WebSocketServer({ port: env.SIM_PORT })
-const fleetState = createFleetState(env.ROBOT_COUNT, Date.now())
+const fleetState = createFleetState(env.ROBOT_COUNT, Date.now(), env.SIM_MODE)
 let pingSequence = 0
 let fleetTickTimer: NodeJS.Timeout | undefined
 
@@ -112,6 +140,24 @@ wss.on('connection', (socket, request) => {
           serverTs: Date.now(),
         })
         sendJson(socket, pongEvent)
+        return
+      }
+
+      if (parsed.data.type === 'set_mode') {
+        const switched = switchFleetMode(fleetState, parsed.data.mode, Date.now())
+        if (!switched) {
+          return
+        }
+
+        const modeChangedEvent = modeChangedMessageSchema.parse({
+          type: 'mode_changed',
+          mode: fleetState.mode,
+          serverTs: Date.now(),
+        })
+
+        for (const client of wss.clients) {
+          sendJson(client, modeChangedEvent)
+        }
       }
     } catch {
       return
@@ -126,12 +172,24 @@ wss.on('connection', (socket, request) => {
 const pingTimer = setInterval(broadcastPing, env.PING_INTERVAL_MS)
 const fleetLogTimer = setInterval(() => {
   const status = summarizeFleetStatuses(fleetState)
+  const missionTypes = summarizeMissionTypes(fleetState)
   console.log(
-    `[sim] fleet tick=${fleetState.tick} robots=${fleetState.robots.length} ` +
+    `[sim] fleet tick=${fleetState.tick} mode=${fleetState.mode} robots=${fleetState.robots.length} ` +
       `IDLE=${status.IDLE} ON_MISSION=${status.ON_MISSION} NEED_ASSIST=${status.NEED_ASSIST} ` +
-      `FAULT=${status.FAULT} OFFLINE=${status.OFFLINE}`,
+      `FAULT=${status.FAULT} OFFLINE=${status.OFFLINE} ` +
+      `missions: DELIVERY=${missionTypes.DELIVERY} MOVE=${missionTypes.MOVE} BRING=${missionTypes.BRING} PICK=${missionTypes.PICK}`,
   )
 }, env.FLEET_LOG_INTERVAL_MS)
+const modeSwitchTimer =
+  env.MODE_SWITCH_INTERVAL_MS === undefined
+    ? undefined
+    : setInterval(() => {
+        const nextMode = fleetState.mode === 'DELIVERY' ? 'WAREHOUSE' : 'DELIVERY'
+        const switched = switchFleetMode(fleetState, nextMode, Date.now())
+        if (switched) {
+          console.log(`[sim] mode switched to ${fleetState.mode}`)
+        }
+      }, env.MODE_SWITCH_INTERVAL_MS)
 scheduleFleetTick()
 
 const shutdown = (signal: string): void => {
@@ -141,6 +199,9 @@ const shutdown = (signal: string): void => {
   }
   clearInterval(pingTimer)
   clearInterval(fleetLogTimer)
+  if (modeSwitchTimer) {
+    clearInterval(modeSwitchTimer)
+  }
   wss.close(() => {
     console.log('[sim] websocket server closed')
     process.exit(0)
@@ -161,6 +222,7 @@ if (env.SIM_EXIT_AFTER_MS) {
 console.log(`[sim] ws server listening at ws://localhost:${env.SIM_PORT}`)
 console.log(`[sim] ping interval: ${env.PING_INTERVAL_MS}ms`)
 console.log(
-  `[sim] fleet generator: robots=${fleetState.robots.length}, ` +
-    `tickRange=${env.FLEET_TICK_MIN_MS}-${env.FLEET_TICK_MAX_MS}ms`,
+  `[sim] fleet generator: mode=${fleetState.mode}, robots=${fleetState.robots.length}, ` +
+    `tickRange=${env.FLEET_TICK_MIN_MS}-${env.FLEET_TICK_MAX_MS}ms, ` +
+    `modeSwitch=${env.MODE_SWITCH_INTERVAL_MS ?? 'disabled'}`,
 )

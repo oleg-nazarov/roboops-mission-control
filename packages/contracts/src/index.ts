@@ -94,8 +94,10 @@ export const missionSchema = z.object({
   ts: z.number().int().nonnegative(),
   missionId: z.string().min(1),
   robotId: z.string().min(1),
+  mode: opsModeSchema.optional(),
   missionType: missionTypeSchema,
   waypoints: z.array(waypointSchema).min(1),
+  target: waypointSchema.optional(),
   status: missionStatusSchema,
   progress: z.number().min(0).max(100),
 })
