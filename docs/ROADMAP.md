@@ -63,13 +63,13 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Launch basic WebSocket endpoint + ping event
 
 ### Task 006 - Define shared data contracts
-- [ ] Define TS types + schemas for:
-  - [ ] `telemetry`
-  - [ ] `event`
-  - [ ] `mission`
-  - [ ] `incident`
-- [ ] Add runtime validation with `zod`
-- [ ] Store contracts in `packages/contracts` or `apps/web/src/shared`
+- [x] Define TS types + schemas for:
+  - [x] `telemetry`
+  - [x] `event`
+  - [x] `mission`
+  - [x] `incident`
+- [x] Add runtime validation with `zod`
+- [x] Store contracts in `packages/contracts` or `apps/web/src/shared`
 
 ## Phase 1 - Simulation and Data Pipeline
 
@@ -135,6 +135,7 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 
 ### Task 014 - WebSocket client integration
 - [ ] Connect frontend to `apps/sim` via WS
+- [ ] Use `@roboops/contracts` in `apps/web` for WS payload types and runtime validation
 - [ ] Handle all message types
 - [ ] Show connection status in UI
 
