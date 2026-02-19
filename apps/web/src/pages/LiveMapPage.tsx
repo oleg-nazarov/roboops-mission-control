@@ -1,4 +1,8 @@
+import { useAppStore } from '../state/appStore'
+
 export function LiveMapPage() {
+  const mode = useAppStore((state) => state.mode)
+
   return (
     <section className="panel animate-shell-in p-5 [animation-delay:80ms]">
       <p className="text-xs uppercase tracking-[0.18em] text-muted">Live Map</p>
@@ -6,6 +10,9 @@ export function LiveMapPage() {
       <p className="mt-3 max-w-3xl text-sm text-muted">
         This page will render robot positions, trails, targets, and zones using MapLibre for
         delivery mode and SVG floorplan for warehouse mode.
+      </p>
+      <p className="mt-4 text-sm text-muted">
+        Active renderer mode: <span className="font-semibold text-text">{mode}</span>
       </p>
     </section>
   )

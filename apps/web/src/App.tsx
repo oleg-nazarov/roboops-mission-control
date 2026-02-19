@@ -1,25 +1,25 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { FleetPage } from './pages/FleetPage'
 import { IncidentReplayPage } from './pages/IncidentReplayPage'
 import { IncidentsPage } from './pages/IncidentsPage'
 import { LiveMapPage } from './pages/LiveMapPage'
 import { RobotDetailPage } from './pages/RobotDetailPage'
-
-type OpsMode = 'delivery' | 'warehouse'
+import { useAppStore } from './state/appStore'
 
 type NavItem = {
   label: string
   path: string
   badge: string
+  exact: boolean
 }
 
 const navItems: NavItem[] = [
-  { label: 'Fleet Overview', path: '/fleet', badge: '01' },
-  { label: 'Live Map', path: '/map', badge: '02' },
-  { label: 'Incidents', path: '/incidents', badge: '03' },
-  { label: 'Replay', path: '/incidents/INC-000001/replay', badge: '04' },
-  { label: 'Robot Detail', path: '/robots/RBT-001', badge: '05' },
+  { label: 'Fleet Overview', path: '/fleet', badge: '01', exact: true },
+  { label: 'Live Map', path: '/map', badge: '02', exact: true },
+  { label: 'Incidents', path: '/incidents', badge: '03', exact: true },
+  { label: 'Replay', path: '/incidents/INC-000001/replay', badge: '04', exact: true },
+  { label: 'Robot Detail', path: '/robots/RBT-001', badge: '05', exact: false },
 ]
 
 const routeTitles: Record<string, string> = {
@@ -29,7 +29,11 @@ const routeTitles: Record<string, string> = {
 }
 
 function App() {
-  const [mode, setMode] = useState<OpsMode>('delivery')
+  const mode = useAppStore((state) => state.mode)
+  const setMode = useAppStore((state) => state.setMode)
+  const selectedRobotId = useAppStore((state) => state.selectedRobotId)
+  const searchQuery = useAppStore((state) => state.fleetFilters.searchQuery)
+  const statusFilters = useAppStore((state) => state.fleetFilters.statusFilters)
   const location = useLocation()
 
   useEffect(() => {
@@ -108,6 +112,7 @@ function App() {
                       : 'border-border/50 bg-surface-elevated/50 hover:border-accent/40 hover:bg-surface-elevated/80',
                   ].join(' ')
                 }
+                end={item.exact}
                 to={item.path}
               >
                 <span className="text-sm font-medium">{item.label}</span>
@@ -121,6 +126,15 @@ function App() {
             <p className="text-sm text-muted">
               Active{' '}
               <code className="rounded bg-surface-elevated px-1.5 py-0.5">{`data-mode="${mode}"`}</code>
+            </p>
+          </div>
+
+          <div className="mt-3 rounded-panel border border-border/60 bg-bg/35 p-3">
+            <p className="mb-2 text-xs uppercase tracking-[0.18em] text-muted">State Snapshot</p>
+            <p className="text-sm text-muted">Selected robot: {selectedRobotId ?? 'none'}</p>
+            <p className="text-sm text-muted">Fleet search: {searchQuery || 'empty'}</p>
+            <p className="text-sm text-muted">
+              Status filters: {statusFilters.length > 0 ? statusFilters.join(', ') : 'none'}
             </p>
           </div>
         </aside>

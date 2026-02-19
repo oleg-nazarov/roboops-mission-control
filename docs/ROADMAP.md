@@ -126,12 +126,12 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Add basic page placeholders
 
 ### Task 013 - Global app state architecture
-- [ ] Create Zustand store:
-  - [ ] selected mode (Delivery/Warehouse)
-  - [ ] selected robot
-  - [ ] fleet filters/search
-  - [ ] replay state (time cursor, play/pause)
-- [ ] Use TanStack Query for history/replay loading
+- [x] Create Zustand store:
+  - [x] selected mode (Delivery/Warehouse)
+  - [x] selected robot
+  - [x] fleet filters/search
+  - [x] replay state (time cursor, play/pause)
+- [x] Use TanStack Query for history/replay loading
 
 ### Task 014 - WebSocket client integration
 - [ ] Connect frontend to `apps/sim` via WS

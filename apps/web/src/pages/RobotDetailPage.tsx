@@ -1,7 +1,18 @@
+import { useEffect } from 'react'
 import { useParams } from 'react-router-dom'
+import { useAppStore } from '../state/appStore'
 
 export function RobotDetailPage() {
   const { robotId } = useParams()
+  const setSelectedRobotId = useAppStore((state) => state.setSelectedRobotId)
+
+  useEffect(() => {
+    setSelectedRobotId(robotId ?? null)
+
+    return () => {
+      setSelectedRobotId(null)
+    }
+  }, [robotId, setSelectedRobotId])
 
   return (
     <section className="panel animate-shell-in p-5 [animation-delay:80ms]">
