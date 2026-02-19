@@ -134,10 +134,10 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Use TanStack Query for history/replay loading
 
 ### Task 014 - WebSocket client integration
-- [ ] Connect frontend to `apps/sim` via WS
-- [ ] Use `@roboops/contracts` in `apps/web` for WS payload types and runtime validation
-- [ ] Handle all message types
-- [ ] Show connection status in UI
+- [x] Connect frontend to `apps/sim` via WS
+- [x] Use `@roboops/contracts` in `apps/web` for WS payload types and runtime validation
+- [x] Handle all message types
+- [x] Show connection status in UI
 
 ## Phase 3 - Core Screens
 

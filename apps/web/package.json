@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@roboops/contracts": "file:../../packages/contracts",
     "@tanstack/react-query": "^5.90.21",
     "clsx": "^2.1.1",
     "maplibre-gl": "^5.18.0",

@@ -5,7 +5,8 @@ import { IncidentReplayPage } from './pages/IncidentReplayPage'
 import { IncidentsPage } from './pages/IncidentsPage'
 import { LiveMapPage } from './pages/LiveMapPage'
 import { RobotDetailPage } from './pages/RobotDetailPage'
-import { useAppStore } from './state/appStore'
+import { useAppStore, type OpsMode, type WsConnectionStatus } from './state/appStore'
+import { useOpsWebSocket } from './ws/useOpsWebSocket'
 
 type NavItem = {
   label: string
@@ -28,12 +29,24 @@ const routeTitles: Record<string, string> = {
   '/incidents': 'Incidents',
 }
 
+const connectionStatusClasses: Record<WsConnectionStatus, string> = {
+  idle: 'bg-status-offline',
+  connecting: 'bg-status-need-assist',
+  connected: 'bg-status-on-mission',
+  reconnecting: 'bg-status-need-assist',
+  error: 'bg-status-fault',
+}
+
 function App() {
+  const { wsUrl, sendSetModeCommand } = useOpsWebSocket()
   const mode = useAppStore((state) => state.mode)
   const setMode = useAppStore((state) => state.setMode)
   const selectedRobotId = useAppStore((state) => state.selectedRobotId)
   const searchQuery = useAppStore((state) => state.fleetFilters.searchQuery)
   const statusFilters = useAppStore((state) => state.fleetFilters.statusFilters)
+  const wsStatus = useAppStore((state) => state.ws.status)
+  const wsRunId = useAppStore((state) => state.ws.runId)
+  const wsErrorMessage = useAppStore((state) => state.ws.errorMessage)
   const location = useLocation()
 
   useEffect(() => {
@@ -57,6 +70,11 @@ function App() {
     return routeTitles[location.pathname] ?? 'Mission Control'
   }, [location.pathname])
 
+  const onModeSelect = (nextMode: OpsMode): void => {
+    setMode(nextMode)
+    sendSetModeCommand(nextMode)
+  }
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-bg text-text">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,_hsl(var(--ui-color-accent)_/_0.18),_transparent_50%)]" />
@@ -72,23 +90,39 @@ function App() {
             <p className="mt-1 text-xs uppercase tracking-[0.16em] text-muted">{currentRouteTitle}</p>
           </div>
 
-          <div className="flex items-center gap-2 rounded-pill border border-border/70 bg-surface-elevated/80 p-1">
-            <button
-              className="mode-button"
-              data-active={mode === 'delivery'}
-              onClick={() => setMode('delivery')}
-              type="button"
-            >
-              Delivery
-            </button>
-            <button
-              className="mode-button"
-              data-active={mode === 'warehouse'}
-              onClick={() => setMode('warehouse')}
-              type="button"
-            >
-              Warehouse
-            </button>
+          <div className="flex items-center gap-3">
+            <div className="rounded-pill border border-border/70 bg-surface-elevated/80 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <span
+                  className={[
+                    'h-2.5 w-2.5 rounded-full',
+                    connectionStatusClasses[wsStatus],
+                  ].join(' ')}
+                />
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
+                  WS {wsStatus}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-pill border border-border/70 bg-surface-elevated/80 p-1">
+              <button
+                className="mode-button"
+                data-active={mode === 'delivery'}
+                onClick={() => onModeSelect('delivery')}
+                type="button"
+              >
+                Delivery
+              </button>
+              <button
+                className="mode-button"
+                data-active={mode === 'warehouse'}
+                onClick={() => onModeSelect('warehouse')}
+                type="button"
+              >
+                Warehouse
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -136,6 +170,9 @@ function App() {
             <p className="text-sm text-muted">
               Status filters: {statusFilters.length > 0 ? statusFilters.join(', ') : 'none'}
             </p>
+            <p className="text-sm text-muted">WS URL: {wsUrl}</p>
+            <p className="text-sm text-muted">Run session: {wsRunId ?? 'n/a'}</p>
+            {wsErrorMessage ? <p className="text-sm text-status-fault">WS error: {wsErrorMessage}</p> : null}
           </div>
         </aside>
 

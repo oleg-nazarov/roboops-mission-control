@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useReplayRunsQuery } from '../queries/replay'
+import { useAppStore } from '../state/appStore'
 
 const formatTs = (ts: number): string =>
   new Date(ts).toLocaleString('en-US', {
@@ -11,6 +12,8 @@ const formatTs = (ts: number): string =>
 
 export function IncidentsPage() {
   const runsQuery = useReplayRunsQuery()
+  const recentIncidents = useAppStore((state) => state.stream.recentIncidents)
+  const liveIncidents = useMemo(() => recentIncidents.slice(0, 6), [recentIncidents])
 
   const content = useMemo(() => {
     if (runsQuery.isLoading) {
@@ -52,6 +55,20 @@ export function IncidentsPage() {
       <p className="mt-3 max-w-3xl text-sm text-muted">
         This page will list incidents with filters by type, severity, and robot, plus Replay actions.
       </p>
+      <div className="mt-4 rounded-panel border border-border/60 bg-surface-elevated/55 p-4">
+        <p className="text-xs uppercase tracking-[0.14em] text-muted">Live Incident Stream</p>
+        {liveIncidents.length === 0 ? (
+          <p className="mt-2 text-sm text-muted">No live incidents received yet.</p>
+        ) : (
+          <div className="mt-2 space-y-2">
+            {liveIncidents.map((incident) => (
+              <p className="text-sm text-muted" key={incident.incidentId}>
+                {incident.incidentId} {incident.incidentType} {incident.severity} ({incident.robotId})
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
       {content}
     </section>
   )

@@ -8,6 +8,16 @@ export function FleetPage() {
   const setFleetSearchQuery = useAppStore((state) => state.setFleetSearchQuery)
   const toggleFleetStatusFilter = useAppStore((state) => state.toggleFleetStatusFilter)
   const clearFleetStatusFilters = useAppStore((state) => state.clearFleetStatusFilters)
+  const snapshot = useAppStore((state) => state.stream.snapshot)
+  const heartbeat = useAppStore((state) => state.stream.heartbeat)
+  const telemetryByRobot = useAppStore((state) => state.stream.telemetryByRobot)
+  const recentEvents = useAppStore((state) => state.stream.recentEvents)
+  const recentIncidents = useAppStore((state) => state.stream.recentIncidents)
+  const wsStatus = useAppStore((state) => state.ws.status)
+
+  const telemetryCount = Object.keys(telemetryByRobot).length
+  const liveTick = heartbeat?.tick ?? snapshot?.tick
+  const liveMode = heartbeat?.mode ?? snapshot?.mode
 
   return (
     <section className="panel animate-shell-in p-5 [animation-delay:80ms]">
@@ -17,6 +27,23 @@ export function FleetPage() {
         This page will show robot status, battery, heartbeat, mission progress, localization
         confidence, and 24h fault counters.
       </p>
+
+      <div className="mt-5 rounded-panel border border-border/60 bg-surface-elevated/55 p-4">
+        <p className="text-xs uppercase tracking-[0.14em] text-muted">Live Stream</p>
+        <p className="mt-2 text-sm text-muted">Connection: {wsStatus}</p>
+        <p className="text-sm text-muted">Robots in telemetry cache: {telemetryCount}</p>
+        <p className="text-sm text-muted">Recent events: {recentEvents.length}</p>
+        <p className="text-sm text-muted">Recent incidents: {recentIncidents.length}</p>
+        {liveTick !== undefined ? <p className="mt-2 text-sm text-muted">Live tick: {liveTick}</p> : null}
+        {liveMode ? <p className="text-sm text-muted">Live mode: {liveMode}</p> : null}
+        {snapshot ? (
+          <>
+            <p className="text-sm text-muted">Snapshot robots: {snapshot.robotCount}</p>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-muted">Waiting for first snapshot...</p>
+        )}
+      </div>
 
       <div className="mt-5 grid gap-4 rounded-panel border border-border/60 bg-surface-elevated/55 p-4 md:grid-cols-[1fr_auto]">
         <label className="block">

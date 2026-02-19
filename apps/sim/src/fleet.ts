@@ -32,6 +32,14 @@ const ANOMALY_COOLDOWN_MS = {
   geofence: 11_000,
 } as const
 
+const ANOMALY_PROBABILITY = {
+  localization: 0.004,
+  sensorFail: 0.0018,
+  stuck: 0.003,
+  offline: 0.0012,
+  geofence: 0.0015,
+} as const
+
 const OFFLINE_ANOMALY_DURATION_MS = 10_000
 
 type AnomalyKey = keyof typeof ANOMALY_COOLDOWN_MS
@@ -540,7 +548,7 @@ const applyAnomalies = (fleet: FleetRuntimeState, robot: RobotRuntimeState, buck
   if (
     robot.status === 'ON_MISSION' &&
     canTriggerAnomaly(robot, 'localization', now) &&
-    Math.random() < 0.015
+    Math.random() < ANOMALY_PROBABILITY.localization
   ) {
     setAnomalyCooldown(robot, 'localization', now)
     robot.localizationConfidence = clamp(randomFloat(0.14, 0.34), 0, 1)
@@ -558,7 +566,11 @@ const applyAnomalies = (fleet: FleetRuntimeState, robot: RobotRuntimeState, buck
     return
   }
 
-  if (robot.status !== 'OFFLINE' && canTriggerAnomaly(robot, 'sensorFail', now) && Math.random() < 0.008) {
+  if (
+    robot.status !== 'OFFLINE' &&
+    canTriggerAnomaly(robot, 'sensorFail', now) &&
+    Math.random() < ANOMALY_PROBABILITY.sensorFail
+  ) {
     setAnomalyCooldown(robot, 'sensorFail', now)
     const sensorKey = SENSOR_KEYS[randomInt(0, SENSOR_KEYS.length - 1)]
     robot.sensors[sensorKey] = 'FAIL'
@@ -574,7 +586,11 @@ const applyAnomalies = (fleet: FleetRuntimeState, robot: RobotRuntimeState, buck
     return
   }
 
-  if (robot.status === 'ON_MISSION' && canTriggerAnomaly(robot, 'stuck', now) && Math.random() < 0.012) {
+  if (
+    robot.status === 'ON_MISSION' &&
+    canTriggerAnomaly(robot, 'stuck', now) &&
+    Math.random() < ANOMALY_PROBABILITY.stuck
+  ) {
     setAnomalyCooldown(robot, 'stuck', now)
     robot.stuckUntilTs = now + randomInt(4_000, 8_000)
     robot.speed = 0
@@ -592,7 +608,11 @@ const applyAnomalies = (fleet: FleetRuntimeState, robot: RobotRuntimeState, buck
     return
   }
 
-  if (robot.status !== 'OFFLINE' && canTriggerAnomaly(robot, 'offline', now) && Math.random() < 0.0045) {
+  if (
+    robot.status !== 'OFFLINE' &&
+    canTriggerAnomaly(robot, 'offline', now) &&
+    Math.random() < ANOMALY_PROBABILITY.offline
+  ) {
     setAnomalyCooldown(robot, 'offline', now)
     setStatus(fleet, robot, 'OFFLINE', { offlineDurationMs: OFFLINE_ANOMALY_DURATION_MS })
     pushAnomalySignal(fleet, robot, bucket, {
@@ -610,7 +630,7 @@ const applyAnomalies = (fleet: FleetRuntimeState, robot: RobotRuntimeState, buck
     fleet.mode === 'DELIVERY' &&
     robot.status === 'ON_MISSION' &&
     canTriggerAnomaly(robot, 'geofence', now) &&
-    Math.random() < 0.006
+    Math.random() < ANOMALY_PROBABILITY.geofence
   ) {
     setAnomalyCooldown(robot, 'geofence', now)
     robot.pose.x = Math.random() < 0.5 ? -randomFloat(1, 4) : 100 + randomFloat(1, 4)

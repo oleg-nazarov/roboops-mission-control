@@ -2,13 +2,26 @@ import { WebSocket, WebSocketServer, type RawData } from 'ws'
 import { z } from 'zod'
 import {
   eventSchema,
+  heartbeatMessageSchema,
   incidentSchema,
   opsModeSchema,
+  snapshotMessageSchema,
+  telemetryMessageSchema,
+  eventMessageSchema,
+  incidentMessageSchema,
   telemetrySchema,
   type Event as OpsEvent,
+  type EventMessage,
+  type HeartbeatMessage,
+  type IncidentMessage,
   type Incident as OpsIncident,
   type OpsMode,
+  type SnapshotMessage,
   type Telemetry,
+  type TelemetryMessage,
+  type WsClientMessage,
+  wsClientMessageSchema,
+  type WsServerMessage,
 } from '@roboops/contracts'
 import {
   createFleetSnapshotPayload,
@@ -19,7 +32,6 @@ import {
   summarizeMissionTypes,
   switchFleetMode,
   tickFleetState,
-  type FleetSnapshotPayload,
 } from './fleet.js'
 import { createRunLogger } from './run-logger.js'
 
@@ -52,76 +64,7 @@ const env = envSchema.parse({
 })
 
 const heartbeatIntervalMs = env.HEARTBEAT_INTERVAL_MS ?? env.PING_INTERVAL_MS ?? 3000
-
-const pingInboundMessageSchema = z.object({
-  type: z.literal('ping'),
-  clientTs: z.number().optional(),
-})
-
-const resumeInboundMessageSchema = z.object({
-  type: z.literal('resume'),
-  lastStreamSeq: z.number().int().nonnegative(),
-})
-
-const setModeInboundMessageSchema = z.object({
-  type: z.literal('set_mode'),
-  mode: opsModeSchema,
-})
-
-const inboundMessageSchema = z.discriminatedUnion('type', [
-  pingInboundMessageSchema,
-  resumeInboundMessageSchema,
-  setModeInboundMessageSchema,
-])
-
-type SnapshotMessage = {
-  type: 'snapshot'
-  streamSeq: number
-  serverTs: number
-  payload: FleetSnapshotPayload
-}
-
-type TelemetryMessage = {
-  type: 'telemetry'
-  streamSeq: number
-  serverTs: number
-  payload: Telemetry
-}
-
-type EventMessage = {
-  type: 'event'
-  streamSeq: number
-  serverTs: number
-  payload: OpsEvent
-}
-
-type IncidentMessage = {
-  type: 'incident'
-  streamSeq: number
-  serverTs: number
-  payload: OpsIncident
-}
-
-type HeartbeatMessage = {
-  type: 'heartbeat'
-  streamSeq: number
-  serverTs: number
-  payload: {
-    tick: number
-    mode: OpsMode
-    connectedClients: number
-    runId: string
-    reason?: string
-    replyToClientTs?: number
-  }
-}
-
-type OutboundMessage =
-  | SnapshotMessage
-  | TelemetryMessage
-  | EventMessage
-  | IncidentMessage
-  | HeartbeatMessage
+type OutboundMessage = WsServerMessage
 
 const wss = new WebSocketServer({ port: env.SIM_PORT })
 const fleetState = createFleetState(env.ROBOT_COUNT, Date.now(), env.SIM_MODE)
@@ -174,74 +117,81 @@ const publish = (payload: OutboundMessage): void => {
   broadcast(payload)
 }
 
-const buildSnapshotMessage = (): SnapshotMessage => ({
-  type: 'snapshot',
-  streamSeq: nextStreamSeq(),
-  serverTs: Date.now(),
-  payload: createFleetSnapshotPayload(fleetState),
-})
+const buildSnapshotMessage = (): SnapshotMessage =>
+  snapshotMessageSchema.parse({
+    type: 'snapshot',
+    streamSeq: nextStreamSeq(),
+    serverTs: Date.now(),
+    payload: createFleetSnapshotPayload(fleetState),
+  })
 
-const buildDirectSnapshotMessage = (): SnapshotMessage => ({
-  type: 'snapshot',
-  streamSeq: currentStreamSeq(),
-  serverTs: Date.now(),
-  payload: createFleetSnapshotPayload(fleetState),
-})
+const buildDirectSnapshotMessage = (): SnapshotMessage =>
+  snapshotMessageSchema.parse({
+    type: 'snapshot',
+    streamSeq: currentStreamSeq(),
+    serverTs: Date.now(),
+    payload: createFleetSnapshotPayload(fleetState),
+  })
 
-const buildTelemetryMessage = (telemetry: Telemetry): TelemetryMessage => ({
-  type: 'telemetry',
-  streamSeq: nextStreamSeq(),
-  serverTs: Date.now(),
-  payload: telemetrySchema.parse(telemetry),
-})
+const buildTelemetryMessage = (telemetry: Telemetry): TelemetryMessage =>
+  telemetryMessageSchema.parse({
+    type: 'telemetry',
+    streamSeq: nextStreamSeq(),
+    serverTs: Date.now(),
+    payload: telemetrySchema.parse(telemetry),
+  })
 
-const buildEventMessage = (event: OpsEvent): EventMessage => ({
-  type: 'event',
-  streamSeq: nextStreamSeq(),
-  serverTs: Date.now(),
-  payload: eventSchema.parse(event),
-})
+const buildEventMessage = (event: OpsEvent): EventMessage =>
+  eventMessageSchema.parse({
+    type: 'event',
+    streamSeq: nextStreamSeq(),
+    serverTs: Date.now(),
+    payload: eventSchema.parse(event),
+  })
 
-const buildIncidentMessage = (incident: OpsIncident): IncidentMessage => ({
-  type: 'incident',
-  streamSeq: nextStreamSeq(),
-  serverTs: Date.now(),
-  payload: incidentSchema.parse(incident),
-})
+const buildIncidentMessage = (incident: OpsIncident): IncidentMessage =>
+  incidentMessageSchema.parse({
+    type: 'incident',
+    streamSeq: nextStreamSeq(),
+    serverTs: Date.now(),
+    payload: incidentSchema.parse(incident),
+  })
 
 const buildHeartbeatMessage = (input?: {
   reason?: string
   replyToClientTs?: number
-}): HeartbeatMessage => ({
-  type: 'heartbeat',
-  streamSeq: nextStreamSeq(),
-  serverTs: Date.now(),
-  payload: {
-    tick: fleetState.tick,
-    mode: fleetState.mode,
-    connectedClients: countConnectedClients(),
-    runId: runLogger.runId,
-    reason: input?.reason,
-    replyToClientTs: input?.replyToClientTs,
-  },
-})
+}): HeartbeatMessage =>
+  heartbeatMessageSchema.parse({
+    type: 'heartbeat',
+    streamSeq: nextStreamSeq(),
+    serverTs: Date.now(),
+    payload: {
+      tick: fleetState.tick,
+      mode: fleetState.mode,
+      connectedClients: countConnectedClients(),
+      runId: runLogger.runId,
+      reason: input?.reason,
+      replyToClientTs: input?.replyToClientTs,
+    },
+  })
 
 const buildDirectHeartbeatMessage = (input?: {
   reason?: string
   replyToClientTs?: number
-}): HeartbeatMessage => ({
-  type: 'heartbeat',
-  streamSeq: currentStreamSeq(),
-  serverTs: Date.now(),
-  payload: {
-    tick: fleetState.tick,
-    mode: fleetState.mode,
-    connectedClients: countConnectedClients(),
-    runId: runLogger.runId,
-    reason: input?.reason,
-    replyToClientTs: input?.replyToClientTs,
-  },
-})
+}): HeartbeatMessage =>
+  heartbeatMessageSchema.parse({
+    type: 'heartbeat',
+    streamSeq: currentStreamSeq(),
+    serverTs: Date.now(),
+    payload: {
+      tick: fleetState.tick,
+      mode: fleetState.mode,
+      connectedClients: countConnectedClients(),
+      runId: runLogger.runId,
+      reason: input?.reason,
+      replyToClientTs: input?.replyToClientTs,
+    },
+  })
 
 const publishSnapshot = (): void => {
   publish(buildSnapshotMessage())
@@ -307,10 +257,10 @@ const toText = (rawMessage: RawData): string => {
 
 const tryParseInboundMessage = (
   rawMessage: RawData,
-): z.infer<typeof inboundMessageSchema> | undefined => {
+): WsClientMessage | undefined => {
   try {
     const parsed = JSON.parse(toText(rawMessage)) as unknown
-    const message = inboundMessageSchema.safeParse(parsed)
+    const message = wsClientMessageSchema.safeParse(parsed)
     if (!message.success) {
       return undefined
     }
