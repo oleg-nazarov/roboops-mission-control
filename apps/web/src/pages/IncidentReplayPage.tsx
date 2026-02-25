@@ -15,7 +15,9 @@ const formatTs = (ts: number): string =>
 export function IncidentReplayPage() {
   const { incidentId } = useParams()
   const replayQuery = useIncidentReplayQuery(incidentId)
-  const replay = useAppStore((state) => state.replay)
+  const replayCursorTs = useAppStore((state) => state.replay.cursorTs)
+  const replayIsPlaying = useAppStore((state) => state.replay.isPlaying)
+  const replaySpeed = useAppStore((state) => state.replay.speed)
   const setReplayCursorTs = useAppStore((state) => state.setReplayCursorTs)
   const setReplayPlaying = useAppStore((state) => state.setReplayPlaying)
   const setReplaySpeed = useAppStore((state) => state.setReplaySpeed)
@@ -31,35 +33,35 @@ export function IncidentReplayPage() {
       return
     }
 
-    if (replay.cursorTs === 0) {
+    if (replayCursorTs === 0) {
       setReplayCursorTs(replayQuery.data.startedAtTs)
     }
-  }, [replay.cursorTs, replayQuery.data, setReplayCursorTs])
+  }, [replayCursorTs, replayQuery.data, setReplayCursorTs])
 
   useEffect(() => {
-    if (!replayQuery.data || !replay.isPlaying) {
+    if (!replayQuery.data || !replayIsPlaying) {
       return
     }
 
     const replayData = replayQuery.data
     const timer = setInterval(() => {
-      advanceReplayCursor(200 * replay.speed, replayData.endedAtTs)
+      advanceReplayCursor(200 * replaySpeed, replayData.endedAtTs)
     }, 200)
 
     return () => {
       clearInterval(timer)
     }
-  }, [advanceReplayCursor, replay.isPlaying, replay.speed, replayQuery.data])
+  }, [advanceReplayCursor, replayIsPlaying, replaySpeed, replayQuery.data])
 
   useEffect(() => {
-    if (!replayQuery.data || !replay.isPlaying) {
+    if (!replayQuery.data || !replayIsPlaying) {
       return
     }
 
-    if (replay.cursorTs >= replayQuery.data.endedAtTs) {
+    if (replayCursorTs >= replayQuery.data.endedAtTs) {
       setReplayPlaying(false)
     }
-  }, [replay.cursorTs, replay.isPlaying, replayQuery.data, setReplayPlaying])
+  }, [replayCursorTs, replayIsPlaying, replayQuery.data, setReplayPlaying])
 
   const activeMetric = useMemo(() => {
     const metrics = replayQuery.data?.metrics
@@ -68,9 +70,9 @@ export function IncidentReplayPage() {
     }
 
     return metrics.reduce((closest, point) =>
-      Math.abs(point.ts - replay.cursorTs) < Math.abs(closest.ts - replay.cursorTs) ? point : closest,
+      Math.abs(point.ts - replayCursorTs) < Math.abs(closest.ts - replayCursorTs) ? point : closest,
     )
-  }, [replay.cursorTs, replayQuery.data?.metrics])
+  }, [replayCursorTs, replayQuery.data?.metrics])
 
   const rangeMin = replayQuery.data?.startedAtTs ?? 0
   const rangeMax = replayQuery.data?.endedAtTs ?? 0
@@ -118,24 +120,24 @@ export function IncidentReplayPage() {
                 onChange={(event) => setReplayCursorTs(Number(event.target.value))}
                 step={1000}
                 type="range"
-                value={Math.min(Math.max(replay.cursorTs, rangeMin), rangeMax)}
+                value={Math.min(Math.max(replayCursorTs, rangeMin), rangeMax)}
               />
             </label>
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-accent/40"
-                onClick={() => setReplayPlaying(!replay.isPlaying)}
+                onClick={() => setReplayPlaying(!replayIsPlaying)}
                 type="button"
               >
-                {replay.isPlaying ? 'Pause' : 'Play'}
+                {replayIsPlaying ? 'Pause' : 'Play'}
               </button>
 
               {speedOptions.map((speed) => (
                 <button
                   className={[
                     'rounded-pill border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition',
-                    replay.speed === speed
+                    replaySpeed === speed
                       ? 'border-accent/60 bg-accent-soft text-text'
                       : 'border-border/70 bg-surface text-muted hover:border-accent/40',
                   ].join(' ')}
