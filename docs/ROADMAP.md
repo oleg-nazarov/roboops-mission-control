@@ -142,16 +142,16 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 ## Phase 3 - Core Screens
 
 ### Task 015 - Fleet Overview table (MVP-critical)
-- [ ] Add columns:
-  - [ ] status
-  - [ ] battery %
-  - [ ] temperature
-  - [ ] last heartbeat (sec)
-  - [ ] current mission + progress
-  - [ ] localization confidence
-  - [ ] faults count (24h)
-- [ ] Add sort by status, battery, heartbeat
-- [ ] Row click opens `Robot Detail`
+- [x] Add columns:
+  - [x] status
+  - [x] battery %
+  - [x] temperature
+  - [x] last heartbeat (sec)
+  - [x] current mission + progress
+  - [x] localization confidence
+  - [x] faults count (24h)
+- [x] Add sort by status, battery, heartbeat
+- [x] Row click opens `Robot Detail`
 
 ### Task 016 - Fleet filters + search (MVP-critical)
 - [ ] Add filters:
