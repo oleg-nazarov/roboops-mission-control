@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import { createFleetFiltersSlice } from './slices/fleetFiltersSlice'
 import { createReplaySlice } from './slices/replaySlice'
 import { createUiSlice } from './slices/uiSlice'
@@ -21,9 +22,20 @@ export type {
   WsStreamSlice,
 } from './types'
 
-export const useAppStore = create<AppStoreState>()((...args) => ({
-  ...createUiSlice(...args),
-  ...createFleetFiltersSlice(...args),
-  ...createReplaySlice(...args),
-  ...createWsStreamSlice(...args),
-}))
+export const useAppStore = create<AppStoreState>()(
+  persist(
+    (...args) => ({
+      ...createUiSlice(...args),
+      ...createFleetFiltersSlice(...args),
+      ...createReplaySlice(...args),
+      ...createWsStreamSlice(...args),
+    }),
+    {
+      name: 'roboops-fleet-filters',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        fleetFilters: state.fleetFilters,
+      }),
+    },
+  ),
+)

@@ -154,12 +154,12 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Row click opens `Robot Detail`
 
 ### Task 016 - Fleet filters + search (MVP-critical)
-- [ ] Add filters:
-  - [ ] `FAULT`
-  - [ ] `NEED_ASSIST`
-  - [ ] `OFFLINE`
-- [ ] Add search by `robotId`
-- [ ] Persist filters in localStorage
+- [x] Add filters:
+  - [x] `FAULT`
+  - [x] `NEED_ASSIST`
+  - [x] `OFFLINE`
+- [x] Add search by `robotId`
+- [x] Persist filters in localStorage
 
 ### Task 017 - Live Map (Delivery + Warehouse)
 - [ ] Delivery renderer: MapLibre map with robot positions and overlays
