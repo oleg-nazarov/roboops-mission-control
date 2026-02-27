@@ -55,6 +55,10 @@ export function LiveMapPage() {
   const trailsByRobot = useAppStore((state) => state.stream.trailsByRobot)
   const selectedRobotId = useAppStore((state) => state.selectedRobotId)
   const setSelectedRobotId = useAppStore((state) => state.setSelectedRobotId)
+  const operatorActionsByRobot = useAppStore((state) => state.operatorActions.byRobot)
+  const requestOperatorAssistance = useAppStore((state) => state.requestOperatorAssistance)
+  const toggleRobotMissionPause = useAppStore((state) => state.toggleRobotMissionPause)
+  const createIncidentTicket = useAppStore((state) => state.createIncidentTicket)
 
   const missionByRobotId = useMemo(() => {
     const map = new Map<
@@ -163,6 +167,10 @@ export function LiveMapPage() {
     () => robotDetails.find((robot) => robot.robotId === selectedRobotId) ?? null,
     [robotDetails, selectedRobotId],
   )
+  const selectedRobotOperatorActions = useMemo(
+    () => (selectedRobot ? operatorActionsByRobot[selectedRobot.robotId] : null),
+    [operatorActionsByRobot, selectedRobot],
+  )
 
   return (
     <section className="panel animate-shell-in space-y-4 p-5 [animation-delay:80ms]">
@@ -253,6 +261,66 @@ export function LiveMapPage() {
                     ? `${selectedRobot.missionProgress.toFixed(1)}%`
                     : 'n/a'}
                 </p>
+              </div>
+
+              <div className="rounded-panel border border-border/60 bg-surface-elevated/60 p-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-muted">Operator Actions</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-status-need-assist/55"
+                    onClick={() =>
+                      requestOperatorAssistance({
+                        robotId: selectedRobot.robotId,
+                        missionId: selectedRobot.missionId,
+                      })
+                    }
+                    type="button"
+                  >
+                    Request Assistance
+                  </button>
+                  <button
+                    className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-accent/55 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={selectedRobot.missionId === null}
+                    onClick={() =>
+                      toggleRobotMissionPause({
+                        robotId: selectedRobot.robotId,
+                        missionId: selectedRobot.missionId,
+                      })
+                    }
+                    type="button"
+                  >
+                    {selectedRobotOperatorActions?.missionPaused ? 'Resume Mission' : 'Pause Mission'}
+                  </button>
+                  <button
+                    className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-status-fault/55"
+                    onClick={() =>
+                      createIncidentTicket({
+                        robotId: selectedRobot.robotId,
+                        missionId: selectedRobot.missionId,
+                      })
+                    }
+                    type="button"
+                  >
+                    Create Incident Ticket
+                  </button>
+                </div>
+                {selectedRobotOperatorActions?.lastActionLabel ? (
+                  <p className="mt-2 text-xs text-muted">
+                    Last action: {selectedRobotOperatorActions.lastActionLabel}
+                  </p>
+                ) : null}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {selectedRobotOperatorActions?.assistanceRequested ? (
+                    <span className="rounded-pill bg-status-need-assist/20 px-2 py-1 text-xs text-status-need-assist">
+                      Assistance requested
+                    </span>
+                  ) : null}
+                  {selectedRobotOperatorActions?.missionPaused ? (
+                    <span className="rounded-pill bg-accent-soft/65 px-2 py-1 text-xs text-accent">
+                      Mission paused (local override)
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
               <div className="flex gap-2">

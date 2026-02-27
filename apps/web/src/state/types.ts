@@ -42,6 +42,18 @@ export type StreamState = {
   heartbeat: HeartbeatPayload | null
 }
 
+export type OperatorRobotActionState = {
+  assistanceRequested: boolean
+  missionPaused: boolean
+  lastActionLabel: string | null
+  lastActionTs: number | null
+}
+
+export type OperatorActionsState = {
+  byRobot: Record<string, OperatorRobotActionState>
+  nextLocalIncidentSeq: number
+}
+
 export type UiSlice = {
   mode: OpsMode
   selectedRobotId: string | null
@@ -74,4 +86,11 @@ export type WsStreamSlice = {
   applyWsMessage: (message: WsServerMessage) => void
 }
 
-export type AppStoreState = UiSlice & FleetFiltersSlice & ReplaySlice & WsStreamSlice
+export type OperatorActionsSlice = {
+  operatorActions: OperatorActionsState
+  requestOperatorAssistance: (input: { robotId: string; missionId: string | null }) => void
+  toggleRobotMissionPause: (input: { robotId: string; missionId: string | null }) => void
+  createIncidentTicket: (input: { robotId: string; missionId: string | null }) => string
+}
+
+export type AppStoreState = UiSlice & FleetFiltersSlice & ReplaySlice & WsStreamSlice & OperatorActionsSlice
