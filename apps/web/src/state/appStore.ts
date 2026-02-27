@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { createFleetFiltersSlice } from './slices/fleetFiltersSlice'
+import { createOperatorActionsSlice } from './slices/operatorActionsSlice'
 import { createReplaySlice } from './slices/replaySlice'
 import { createUiSlice } from './slices/uiSlice'
 import { createWsStreamSlice } from './slices/wsStreamSlice'
@@ -12,6 +13,9 @@ export type {
   FleetFiltersSlice,
   FleetStatusFilter,
   OpsMode,
+  OperatorActionsSlice,
+  OperatorActionsState,
+  OperatorRobotActionState,
   ReplaySlice,
   ReplaySpeed,
   ReplayState,
@@ -29,6 +33,7 @@ export const useAppStore = create<AppStoreState>()(
       ...createFleetFiltersSlice(...args),
       ...createReplaySlice(...args),
       ...createWsStreamSlice(...args),
+      ...createOperatorActionsSlice(...args),
     }),
     {
       name: 'roboops-fleet-filters',

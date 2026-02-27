@@ -170,12 +170,12 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Click robot to open side panel
 
 ### Task 018 - Robot side panel on map
-- [ ] Show quick robot status
-- [ ] Show mission + progress
+- [x] Show quick robot status
+- [x] Show mission + progress
 - [ ] Add action buttons:
-  - [ ] Request assistance
-  - [ ] Pause/Resume mission
-  - [ ] Create incident ticket
+  - [x] Request assistance
+  - [x] Pause/Resume mission
+  - [x] Create incident ticket
 
 ### Task 019 - Robot Detail: Telemetry + Sensors
 - [ ] Telemetry charts (speed, battery, confidence, temp)
