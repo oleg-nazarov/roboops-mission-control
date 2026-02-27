@@ -306,6 +306,8 @@ const scheduleFleetTick = (): void => {
   runLogger.logTelemetryBatch(telemetryBatch)
   runLogger.logEventBatch(tickResult.events)
 
+  publishSnapshot()
+
   for (const telemetry of telemetryBatch) {
     publishTelemetry(telemetry)
   }

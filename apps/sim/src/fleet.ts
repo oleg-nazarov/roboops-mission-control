@@ -9,6 +9,7 @@ import type {
   SensorHealth,
   Severity,
   Telemetry,
+  WarehouseZoneId,
 } from '@roboops/contracts'
 
 const STATUS_ORDER: RobotStatus[] = [
@@ -23,6 +24,25 @@ const SENSOR_KEYS = ['lidar', 'cam', 'gps', 'imu'] as const
 type SensorKey = (typeof SENSOR_KEYS)[number]
 
 const WAREHOUSE_MISSION_TYPES: MissionType[] = ['MOVE', 'BRING', 'PICK']
+type WarehouseMissionType = (typeof WAREHOUSE_MISSION_TYPES)[number]
+
+const WAREHOUSE_ZONE_IDS = ['INBOUND', 'HIGH_BAY', 'PACKING', 'OUTBOUND'] as const
+
+type WarehouseZoneBounds = {
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+}
+
+const WAREHOUSE_ZONE_BOUNDS: Record<WarehouseZoneId, WarehouseZoneBounds> = {
+  INBOUND: { minX: 2, maxX: 26, minY: 64, maxY: 98 },
+  HIGH_BAY: { minX: 30, maxX: 68, minY: 64, maxY: 98 },
+  PACKING: { minX: 72, maxX: 93, minY: 64, maxY: 98 },
+  OUTBOUND: { minX: 2, maxX: 93, minY: 8, maxY: 53 },
+}
+const DELIVERY_GRID_COLUMNS = [12, 24, 36, 48, 60] as const
+const DELIVERY_GRID_ROWS = [18, 32, 46, 60, 74] as const
 
 const ANOMALY_COOLDOWN_MS = {
   localization: 9_000,
@@ -41,8 +61,55 @@ const ANOMALY_PROBABILITY = {
 } as const
 
 const OFFLINE_ANOMALY_DURATION_MS = 10_000
+const FINAL_TARGET_REACHED_DISTANCE = 0.2
+const WAYPOINT_REACHED_DISTANCE = 0.25
 
 type AnomalyKey = keyof typeof ANOMALY_COOLDOWN_MS
+
+type DeliveryGraphNode = {
+  id: string
+  x: number
+  y: number
+  neighbors: string[]
+}
+
+const DELIVERY_ROUTE_NODES: DeliveryGraphNode[] = DELIVERY_GRID_ROWS.flatMap((row, rowIndex) =>
+  DELIVERY_GRID_COLUMNS.map((column, columnIndex) => {
+    const id = `DLV-${rowIndex}-${columnIndex}`
+    const neighbors: string[] = []
+
+    if (rowIndex > 0) {
+      neighbors.push(`DLV-${rowIndex - 1}-${columnIndex}`)
+    }
+    if (rowIndex < DELIVERY_GRID_ROWS.length - 1) {
+      neighbors.push(`DLV-${rowIndex + 1}-${columnIndex}`)
+    }
+    if (columnIndex > 0) {
+      neighbors.push(`DLV-${rowIndex}-${columnIndex - 1}`)
+    }
+    if (columnIndex < DELIVERY_GRID_COLUMNS.length - 1) {
+      neighbors.push(`DLV-${rowIndex}-${columnIndex + 1}`)
+    }
+
+    return {
+      id,
+      x: column,
+      y: row,
+      neighbors,
+    }
+  }),
+)
+
+const DELIVERY_ROUTE_FALLBACK_NODE: DeliveryGraphNode = DELIVERY_ROUTE_NODES[0] ?? {
+  id: 'DLV-FALLBACK',
+  x: 36,
+  y: 46,
+  neighbors: [],
+}
+
+const DELIVERY_ROUTE_NODE_BY_ID = new Map<string, DeliveryGraphNode>(
+  DELIVERY_ROUTE_NODES.map((node) => [node.id, node]),
+)
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value))
@@ -74,9 +141,46 @@ const randomSensorStatus = (): SensorHealth => {
   return 'WARN'
 }
 
+const isWarehouseMissionType = (missionType: MissionType): missionType is WarehouseMissionType =>
+  missionType === 'MOVE' || missionType === 'BRING' || missionType === 'PICK'
+
 export type Waypoint = {
   x: number
   y: number
+}
+
+const getDeliveryNodeById = (nodeId: string): DeliveryGraphNode =>
+  DELIVERY_ROUTE_NODE_BY_ID.get(nodeId) ?? DELIVERY_ROUTE_FALLBACK_NODE
+
+const toWaypoint = (node: DeliveryGraphNode): Waypoint => ({
+  x: node.x,
+  y: node.y,
+})
+
+const getNearestDeliveryNode = (point: Waypoint): DeliveryGraphNode => {
+  let nearestNode = DELIVERY_ROUTE_FALLBACK_NODE
+  let nearestDistance = Number.POSITIVE_INFINITY
+
+  for (const node of DELIVERY_ROUTE_NODES) {
+    const distance = Math.hypot(point.x - node.x, point.y - node.y)
+    if (distance < nearestDistance) {
+      nearestDistance = distance
+      nearestNode = node
+    }
+  }
+
+  return nearestNode
+}
+
+const snapToDeliveryRouteGraph = (point: Waypoint): Waypoint => toWaypoint(getNearestDeliveryNode(point))
+
+const sampleDeliverySpawnPoint = (): Waypoint => {
+  if (DELIVERY_ROUTE_NODES.length === 0) {
+    return toWaypoint(DELIVERY_ROUTE_FALLBACK_NODE)
+  }
+
+  const index = randomInt(0, DELIVERY_ROUTE_NODES.length - 1)
+  return toWaypoint(DELIVERY_ROUTE_NODES[index])
 }
 
 export type MissionRuntimeState = {
@@ -84,10 +188,14 @@ export type MissionRuntimeState = {
   robotId: string
   mode: OpsMode
   missionType: MissionType
+  fromZoneId: WarehouseZoneId | null
+  toZoneId: WarehouseZoneId | null
   status: MissionStatus
   progress: number
   waypoints: Waypoint[]
   target: Waypoint
+  currentWaypointIndex: number
+  currentLegStart: Waypoint
   createdAtTs: number
   updatedAtTs: number
 }
@@ -154,6 +262,8 @@ export type FleetMissionSnapshot = {
   robotId: string
   mode: OpsMode
   missionType: MissionType
+  fromZoneId: WarehouseZoneId | null
+  toZoneId: WarehouseZoneId | null
   status: MissionStatus
   progress: number
   target: Waypoint
@@ -189,31 +299,138 @@ const assignEventId = (fleet: FleetRuntimeState): string => {
   return eventId
 }
 
-const createRoute = (mode: OpsMode, origin: Waypoint): { waypoints: Waypoint[]; target: Waypoint } => {
-  const waypointCount = mode === 'DELIVERY' ? randomInt(4, 7) : randomInt(3, 5)
+const createDeliveryRoute = (
+  origin: Waypoint,
+): { waypoints: Waypoint[]; target: Waypoint; fromZoneId: WarehouseZoneId | null; toZoneId: WarehouseZoneId | null } => {
+  const waypointCount = randomInt(4, 7)
   const waypoints: Waypoint[] = []
-  let current = origin
+  let currentNode = getNearestDeliveryNode(origin)
+  let previousNodeId: string | null = null
 
   for (let index = 0; index < waypointCount; index += 1) {
-    const next: Waypoint =
-      mode === 'DELIVERY'
-        ? {
-            x: clamp(current.x + randomFloat(-11, 14), 0, 100),
-            y: clamp(current.y + randomFloat(-11, 14), 0, 100),
-          }
-        : {
-            x: clamp(current.x + randomFloat(-8, 8), 0, 100),
-            y: clamp(current.y + (Math.random() < 0.5 ? 0 : randomFloat(-8, 8)), 0, 100),
-          }
+    const preferredNeighbors = currentNode.neighbors.filter((nodeId) => nodeId !== previousNodeId)
+    const candidateNeighbors =
+      preferredNeighbors.length > 0 ? preferredNeighbors : currentNode.neighbors
+    const nextNodeId =
+      candidateNeighbors.length > 0
+        ? candidateNeighbors[randomInt(0, candidateNeighbors.length - 1)]
+        : currentNode.id
+    const nextNode = getDeliveryNodeById(nextNodeId)
 
-    waypoints.push(next)
-    current = next
+    waypoints.push(toWaypoint(nextNode))
+    previousNodeId = currentNode.id
+    currentNode = nextNode
   }
 
   return {
     waypoints,
     target: waypoints[waypoints.length - 1],
+    fromZoneId: null,
+    toZoneId: null,
   }
+}
+
+const pickWarehouseZone = (excludingZoneId?: WarehouseZoneId): WarehouseZoneId => {
+  const candidates =
+    excludingZoneId === undefined
+      ? WAREHOUSE_ZONE_IDS
+      : WAREHOUSE_ZONE_IDS.filter((zoneId) => zoneId !== excludingZoneId)
+  return candidates[randomInt(0, candidates.length - 1)]
+}
+
+const randomPointInWarehouseZone = (zoneId: WarehouseZoneId): Waypoint => {
+  const bounds = WAREHOUSE_ZONE_BOUNDS[zoneId]
+  return {
+    x: randomFloat(bounds.minX, bounds.maxX),
+    y: randomFloat(bounds.minY, bounds.maxY),
+  }
+}
+
+const pickWarehouseRoutePlan = (
+  missionType: WarehouseMissionType,
+): { fromZoneId: WarehouseZoneId; toZoneId: WarehouseZoneId } => {
+  if (missionType === 'PICK') {
+    return {
+      fromZoneId: 'HIGH_BAY',
+      toZoneId: 'PACKING',
+    }
+  }
+
+  if (missionType === 'BRING') {
+    if (Math.random() < 0.5) {
+      return {
+        fromZoneId: 'INBOUND',
+        toZoneId: 'HIGH_BAY',
+      }
+    }
+
+    return {
+      fromZoneId: 'HIGH_BAY',
+      toZoneId: 'OUTBOUND',
+    }
+  }
+
+  const fromZoneId = pickWarehouseZone()
+  const toZoneId = pickWarehouseZone(fromZoneId)
+  return {
+    fromZoneId,
+    toZoneId,
+  }
+}
+
+const createWarehouseRoute = (
+  origin: Waypoint,
+  missionType: WarehouseMissionType,
+): { waypoints: Waypoint[]; target: Waypoint; fromZoneId: WarehouseZoneId; toZoneId: WarehouseZoneId } => {
+  const waypointCount = randomInt(3, 5)
+  const { fromZoneId, toZoneId } = pickWarehouseRoutePlan(missionType)
+  const startPoint = randomPointInWarehouseZone(fromZoneId)
+  const finalTarget = randomPointInWarehouseZone(toZoneId)
+  const waypoints: Waypoint[] = [startPoint]
+  const intermediateCount = Math.max(0, waypointCount - 2)
+
+  for (let index = 1; index <= intermediateCount; index += 1) {
+    const t = index / (intermediateCount + 1)
+    const interpolationX = startPoint.x + (finalTarget.x - startPoint.x) * t
+    const interpolationY = startPoint.y + (finalTarget.y - startPoint.y) * t
+    const waypoint: Waypoint = {
+      x: clamp(interpolationX + randomFloat(-3.5, 3.5), 0, 100),
+      y: clamp(interpolationY + randomFloat(-3.5, 3.5), 0, 100),
+    }
+
+    const distanceToOrigin = Math.hypot(waypoint.x - origin.x, waypoint.y - origin.y)
+    if (distanceToOrigin < 0.4) {
+      waypoint.x = clamp(waypoint.x + randomFloat(-1.5, 1.5), 0, 100)
+      waypoint.y = clamp(waypoint.y + randomFloat(-1.5, 1.5), 0, 100)
+    }
+
+    waypoints.push(waypoint)
+  }
+
+  waypoints.push(finalTarget)
+
+  return {
+    waypoints,
+    target: finalTarget,
+    fromZoneId,
+    toZoneId,
+  }
+}
+
+const createRoute = (
+  mode: OpsMode,
+  missionType: MissionType,
+  origin: Waypoint,
+): { waypoints: Waypoint[]; target: Waypoint; fromZoneId: WarehouseZoneId | null; toZoneId: WarehouseZoneId | null } => {
+  if (mode === 'DELIVERY') {
+    return createDeliveryRoute(origin)
+  }
+
+  const warehouseMissionType = isWarehouseMissionType(missionType)
+    ? missionType
+    : WAREHOUSE_MISSION_TYPES[randomInt(0, WAREHOUSE_MISSION_TYPES.length - 1)]
+
+  return createWarehouseRoute(origin, warehouseMissionType)
 }
 
 const getMissionForRobot = (
@@ -241,17 +458,25 @@ const createMissionForRobot = (
   }
 
   const missionId = assignMissionId(fleet)
-  const route = createRoute(fleet.mode, { x: robot.pose.x, y: robot.pose.y })
+  const missionType = randomMissionTypeForMode(fleet.mode)
+  const route = createRoute(fleet.mode, missionType, { x: robot.pose.x, y: robot.pose.y })
 
   const mission: MissionRuntimeState = {
     missionId,
     robotId: robot.robotId,
     mode: fleet.mode,
-    missionType: randomMissionTypeForMode(fleet.mode),
+    missionType,
+    fromZoneId: route.fromZoneId,
+    toZoneId: route.toZoneId,
     status: initialStatus,
     progress: 0,
     waypoints: route.waypoints,
     target: route.target,
+    currentWaypointIndex: 0,
+    currentLegStart: {
+      x: robot.pose.x,
+      y: robot.pose.y,
+    },
     createdAtTs: now,
     updatedAtTs: now,
   }
@@ -285,6 +510,12 @@ const setStatus = (
   const now = fleet.updatedAtTs
 
   if (status === 'ON_MISSION') {
+    if (fleet.mode === 'DELIVERY') {
+      const snappedPose = snapToDeliveryRouteGraph({ x: robot.pose.x, y: robot.pose.y })
+      robot.pose.x = snappedPose.x
+      robot.pose.y = snappedPose.y
+    }
+
     const mission = ensureMissionForRobot(fleet, robot, now, 'ACTIVE')
     mission.status = 'ACTIVE'
     mission.updatedAtTs = now
@@ -419,17 +650,43 @@ const updateMissionProgress = (fleet: FleetRuntimeState, robot: RobotRuntimeStat
     robot.speed = randomFloat(0.7, 1.7)
   }
 
-  mission.progress = clamp(mission.progress + randomFloat(1.8, 5.6), 0, 100)
+  if (mission.waypoints.length === 0) {
+    mission.status = 'COMPLETED'
+    mission.progress = 100
+    mission.updatedAtTs = fleet.updatedAtTs
+    robot.missionId = undefined
+    robot.status = 'IDLE'
+    robot.speed = 0
+    return
+  }
 
-  const waypointIndex = Math.min(
+  mission.currentWaypointIndex = clamp(
+    mission.currentWaypointIndex,
+    0,
     mission.waypoints.length - 1,
-    Math.floor((mission.progress / 100) * mission.waypoints.length),
   )
-  mission.target = mission.waypoints[waypointIndex]
+  let movementTarget = mission.waypoints[mission.currentWaypointIndex]
+  let dx = movementTarget.x - robot.pose.x
+  let dy = movementTarget.y - robot.pose.y
+  let distance = Math.hypot(dx, dy)
 
-  const dx = mission.target.x - robot.pose.x
-  const dy = mission.target.y - robot.pose.y
-  const distance = Math.hypot(dx, dy)
+  if (distance <= WAYPOINT_REACHED_DISTANCE) {
+    robot.pose.x = movementTarget.x
+    robot.pose.y = movementTarget.y
+
+    if (mission.currentWaypointIndex < mission.waypoints.length - 1) {
+      mission.currentWaypointIndex += 1
+      mission.currentLegStart = {
+        x: movementTarget.x,
+        y: movementTarget.y,
+      }
+      movementTarget = mission.waypoints[mission.currentWaypointIndex]
+      dx = movementTarget.x - robot.pose.x
+      dy = movementTarget.y - robot.pose.y
+      distance = Math.hypot(dx, dy)
+    }
+  }
+
   if (distance > 0.0001) {
     robot.pose.heading = Math.atan2(dy, dx)
     const step = Math.min(distance, robot.speed * 0.2)
@@ -439,8 +696,27 @@ const updateMissionProgress = (fleet: FleetRuntimeState, robot: RobotRuntimeStat
     robot.pose.heading = (robot.pose.heading + randomHeadingDelta() + Math.PI * 2) % (Math.PI * 2)
   }
 
-  if (mission.progress >= 100) {
+  const legLength = Math.hypot(
+    movementTarget.x - mission.currentLegStart.x,
+    movementTarget.y - mission.currentLegStart.y,
+  )
+  const legRemaining = Math.hypot(movementTarget.x - robot.pose.x, movementTarget.y - robot.pose.y)
+  const legProgress = legLength > 0.0001 ? clamp(1 - legRemaining / legLength, 0, 1) : 1
+  const waypointCount = mission.waypoints.length
+  const computedProgress = clamp(
+    ((mission.currentWaypointIndex + legProgress) / waypointCount) * 100,
+    0,
+    99.9,
+  )
+  mission.progress = Math.max(mission.progress, Number(computedProgress.toFixed(2)))
+
+  const finalDistance = Math.hypot(mission.target.x - robot.pose.x, mission.target.y - robot.pose.y)
+  const onFinalWaypoint = mission.currentWaypointIndex === mission.waypoints.length - 1
+  if (onFinalWaypoint && finalDistance <= FINAL_TARGET_REACHED_DISTANCE) {
+    robot.pose.x = mission.target.x
+    robot.pose.y = mission.target.y
     mission.status = 'COMPLETED'
+    mission.progress = 100
     mission.updatedAtTs = fleet.updatedAtTs
     robot.missionId = undefined
     robot.status = 'IDLE'
@@ -458,11 +734,6 @@ const applyTransitions = (fleet: FleetRuntimeState, robot: RobotRuntimeState): v
 
   if (robot.status === 'IDLE' && Math.random() < 0.08) {
     setStatus(fleet, robot, 'ON_MISSION')
-    return
-  }
-
-  if (robot.status === 'ON_MISSION' && Math.random() < 0.02) {
-    setStatus(fleet, robot, 'IDLE')
     return
   }
 
@@ -672,6 +943,10 @@ export const createFleetState = (
 
   for (let index = 0; index < robotCount; index += 1) {
     const seededStatus = STATUS_ORDER[index % STATUS_ORDER.length]
+    const seededPose = mode === 'DELIVERY' ? sampleDeliverySpawnPoint() : {
+      x: randomFloat(0, 100),
+      y: randomFloat(0, 100),
+    }
 
     const robot: RobotRuntimeState = {
       robotId: formatRobotId(index),
@@ -683,8 +958,8 @@ export const createFleetState = (
       lastHeartbeatTs: now,
       faults24h: randomInt(0, 3),
       pose: {
-        x: randomFloat(0, 100),
-        y: randomFloat(0, 100),
+        x: seededPose.x,
+        y: seededPose.y,
         heading: randomFloat(0, Math.PI * 2),
       },
       sensors: {
@@ -738,6 +1013,12 @@ export const switchFleetMode = (fleet: FleetRuntimeState, mode: OpsMode, now: nu
   fleet.updatedAtTs = now
 
   for (const robot of fleet.robots) {
+    if (mode === 'DELIVERY') {
+      const snappedPose = snapToDeliveryRouteGraph({ x: robot.pose.x, y: robot.pose.y })
+      robot.pose.x = snappedPose.x
+      robot.pose.y = snappedPose.y
+    }
+
     if (robot.status === 'ON_MISSION') {
       createMissionForRobot(fleet, robot, now, 'ACTIVE')
       continue
@@ -817,6 +1098,8 @@ export const createFleetSnapshotPayload = (fleet: FleetRuntimeState): FleetSnaps
         robotId: mission.robotId,
         mode: mission.mode,
         missionType: mission.missionType,
+        fromZoneId: mission.fromZoneId,
+        toZoneId: mission.toZoneId,
         status: mission.status,
         progress: Number(mission.progress.toFixed(2)),
         target: {

@@ -33,6 +33,9 @@ export type Severity = z.infer<typeof severitySchema>
 export const missionTypeSchema = z.enum(['MOVE', 'BRING', 'PICK', 'DELIVERY'])
 export type MissionType = z.infer<typeof missionTypeSchema>
 
+export const warehouseZoneIdSchema = z.enum(['INBOUND', 'HIGH_BAY', 'PACKING', 'OUTBOUND'])
+export type WarehouseZoneId = z.infer<typeof warehouseZoneIdSchema>
+
 export const missionStatusSchema = z.enum([
   'PENDING',
   'ACTIVE',
@@ -154,6 +157,8 @@ export const fleetMissionSnapshotSchema = z.object({
   status: missionStatusSchema,
   progress: z.number().min(0).max(100),
   target: waypointSchema,
+  fromZoneId: warehouseZoneIdSchema.nullable().optional(),
+  toZoneId: warehouseZoneIdSchema.nullable().optional(),
 })
 export type FleetMissionSnapshot = z.infer<typeof fleetMissionSnapshotSchema>
 

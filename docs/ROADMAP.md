@@ -162,12 +162,12 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Persist filters in localStorage
 
 ### Task 017 - Live Map (Delivery + Warehouse)
-- [ ] Delivery renderer: MapLibre map with robot positions and overlays
-- [ ] Warehouse renderer: SVG floorplan with robot positions and zones
-- [ ] Render trail of last N points
-- [ ] Render current target/waypoint
-- [ ] Render geozones / warehouse zones
-- [ ] Click robot to open side panel
+- [x] Delivery renderer: MapLibre map with robot positions and overlays
+- [x] Warehouse renderer: SVG floorplan with robot positions and zones
+- [x] Render trail of last N points
+- [x] Render current target/waypoint
+- [x] Render geozones / warehouse zones
+- [x] Click robot to open side panel
 
 ### Task 018 - Robot side panel on map
 - [ ] Show quick robot status

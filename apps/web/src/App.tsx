@@ -76,11 +76,11 @@ function App() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-bg text-text">
+    <div className="relative min-h-screen bg-bg text-text">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,_hsl(var(--ui-color-accent)_/_0.18),_transparent_50%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(140deg,_transparent_0%,_hsl(var(--ui-color-accent-soft)_/_0.28)_100%)]" />
 
-      <header className="sticky top-0 z-20 border-b border-border/70 bg-surface/85 px-shell py-4 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-border/70 bg-surface/85 px-shell py-4 backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between gap-4">
           <div>
             <p className="font-display text-xs uppercase tracking-[0.2em] text-muted">

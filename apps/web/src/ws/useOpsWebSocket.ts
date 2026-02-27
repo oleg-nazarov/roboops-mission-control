@@ -88,6 +88,10 @@ export const useOpsWebSocket = () => {
       socketRef.current = socket
 
       socket.onopen = () => {
+        if (socketRef.current !== socket) {
+          return
+        }
+
         setWsStatus('connected')
         setWsError(null)
 
@@ -104,6 +108,10 @@ export const useOpsWebSocket = () => {
       }
 
       socket.onmessage = (event) => {
+        if (socketRef.current !== socket) {
+          return
+        }
+
         const rawText = decodeServerPayload(event.data)
         if (!rawText) {
           setWsError('Unsupported WebSocket payload type')
@@ -125,11 +133,19 @@ export const useOpsWebSocket = () => {
       }
 
       socket.onerror = () => {
+        if (socketRef.current !== socket) {
+          return
+        }
+
         setWsStatus('error')
         setWsError('WebSocket transport error')
       }
 
       socket.onclose = (event) => {
+        if (socketRef.current !== socket) {
+          return
+        }
+
         clearPingTimer()
         socketRef.current = null
 
@@ -151,8 +167,9 @@ export const useOpsWebSocket = () => {
       shouldReconnectRef.current = false
       clearPingTimer()
       clearReconnectTimer()
-      socketRef.current?.close()
+      const socket = socketRef.current
       socketRef.current = null
+      socket?.close()
       setWsStatus('idle')
     }
   }, [
