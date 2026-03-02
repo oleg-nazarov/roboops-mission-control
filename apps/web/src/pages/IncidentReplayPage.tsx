@@ -14,7 +14,14 @@ const formatTs = (ts: number): string =>
 
 export function IncidentReplayPage() {
   const { incidentId } = useParams()
-  const replayQuery = useIncidentReplayQuery(incidentId)
+  const replayIncidentHint = useAppStore((state) =>
+    incidentId ? state.stream.recentIncidents.find((incident) => incident.incidentId === incidentId) : undefined,
+  )
+  const replayQuery = useIncidentReplayQuery(incidentId, {
+    robotId: replayIncidentHint?.robotId,
+    missionId: replayIncidentHint?.missionId,
+    ts: replayIncidentHint?.ts,
+  })
   const replayCursorTs = useAppStore((state) => state.replay.cursorTs)
   const replayIsPlaying = useAppStore((state) => state.replay.isPlaying)
   const replaySpeed = useAppStore((state) => state.replay.speed)

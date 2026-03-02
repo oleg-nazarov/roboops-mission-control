@@ -203,9 +203,9 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Add `Replay` action
 
 ### Task 022 - Replay data loader from JSONL
-- [ ] Parse `runId.jsonl`
-- [ ] Normalize events into timeline
-- [ ] Extract WARN/ERROR markers
+- [x] Parse `runId.jsonl`
+- [x] Normalize events into timeline
+- [x] Extract WARN/ERROR markers
 
 ### Task 023 - Replay viewer timeline + scrubber
 - [ ] Time slider with active time cursor

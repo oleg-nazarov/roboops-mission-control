@@ -1,5 +1,6 @@
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
 import { z } from 'zod'
+import { resolve } from 'node:path'
 import {
   eventSchema,
   heartbeatMessageSchema,
@@ -34,9 +35,13 @@ import {
   tickFleetState,
 } from './fleet.js'
 import { createRunLogger } from './run-logger.js'
+import { startReplayApiServer } from './replay-api.js'
 
 const envSchema = z.object({
   SIM_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
+  REPLAY_API_PORT: z.coerce.number().int().min(1).max(65535).default(8091),
+  REPLAY_SCAN_MAX_FILES: z.coerce.number().int().min(1).max(500).default(8),
+  REPLAY_MAX_RUN_FILE_SIZE_MB: z.coerce.number().int().min(1).max(512).default(24),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(250).optional(),
   PING_INTERVAL_MS: z.coerce.number().int().min(250).optional(),
   SNAPSHOT_INTERVAL_MS: z.coerce.number().int().min(250).default(1000),
@@ -52,6 +57,9 @@ const envSchema = z.object({
 
 const env = envSchema.parse({
   SIM_PORT: process.env.SIM_PORT ?? '8090',
+  REPLAY_API_PORT: process.env.REPLAY_API_PORT ?? '8091',
+  REPLAY_SCAN_MAX_FILES: process.env.REPLAY_SCAN_MAX_FILES ?? '8',
+  REPLAY_MAX_RUN_FILE_SIZE_MB: process.env.REPLAY_MAX_RUN_FILE_SIZE_MB ?? '24',
   HEARTBEAT_INTERVAL_MS: process.env.HEARTBEAT_INTERVAL_MS,
   PING_INTERVAL_MS: process.env.PING_INTERVAL_MS,
   SNAPSHOT_INTERVAL_MS: process.env.SNAPSHOT_INTERVAL_MS ?? '1000',
@@ -71,6 +79,12 @@ type OutboundMessage = WsServerMessage
 const wss = new WebSocketServer({ port: env.SIM_PORT })
 const fleetState = createFleetState(env.ROBOT_COUNT, Date.now(), env.SIM_MODE)
 const runLogger = createRunLogger()
+const replayApi = startReplayApiServer({
+  port: env.REPLAY_API_PORT,
+  runsDir: resolve(process.cwd(), '../../data/runs'),
+  scanMaxFiles: env.REPLAY_SCAN_MAX_FILES,
+  maxRunFileSizeBytes: env.REPLAY_MAX_RUN_FILE_SIZE_MB * 1024 * 1024,
+})
 const messageHistory: OutboundMessage[] = []
 let streamSequence = 0
 let fleetTickTimer: NodeJS.Timeout | undefined
@@ -434,10 +448,13 @@ const shutdown = (signal: string): void => {
     clearInterval(modeSwitchTimer)
   }
   wss.close(() => {
-    runLogger.close(() => {
-      console.log('[sim] websocket server closed')
-      console.log(`[sim] run log flushed: ${runLogger.filePath}`)
-      process.exit(0)
+    replayApi.close(() => {
+      runLogger.close(() => {
+        console.log('[sim] websocket server closed')
+        console.log('[sim] replay api server closed')
+        console.log(`[sim] run log flushed: ${runLogger.filePath}`)
+        process.exit(0)
+      })
     })
   })
 
@@ -454,6 +471,10 @@ if (env.SIM_EXIT_AFTER_MS) {
 }
 
 console.log(`[sim] ws server listening at ws://localhost:${env.SIM_PORT}`)
+console.log(`[sim] replay api port: ${env.REPLAY_API_PORT}`)
+console.log(
+  `[sim] replay index settings: scanMaxFiles=${env.REPLAY_SCAN_MAX_FILES} maxRunFileSizeMB=${env.REPLAY_MAX_RUN_FILE_SIZE_MB}`,
+)
 console.log(`[sim] heartbeat interval: ${heartbeatIntervalMs}ms`)
 console.log(`[sim] snapshot interval: ${env.SNAPSHOT_INTERVAL_MS}ms`)
 console.log(`[sim] run session: ${runLogger.runId}`)
