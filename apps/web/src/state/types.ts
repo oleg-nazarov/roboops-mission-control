@@ -94,6 +94,7 @@ export type WsStreamSlice = {
   setWsUrl: (url: string) => void
   setWsError: (errorMessage: string | null) => void
   applyWsMessage: (message: WsServerMessage) => void
+  applyWsMessages: (messages: WsServerMessage[]) => void
 }
 
 export type OperatorActionsSlice = {

@@ -35,6 +35,127 @@ const eventIdentity = (input: {
     ? input.meta.eventId
     : `${input.ts}:${input.robotId}:${input.eventType}:${input.message}`
 
+type WsMutationDraft = {
+  mode: OpsMode
+  ws: WsState
+  stream: StreamState
+}
+
+const applyIncomingWsMessage = (draft: WsMutationDraft, message: Parameters<WsStreamSlice['applyWsMessage']>[0]): void => {
+  draft.ws = {
+    ...draft.ws,
+    lastStreamSeq: Math.max(draft.ws.lastStreamSeq, message.streamSeq),
+    lastServerTs: message.serverTs,
+    errorMessage: null,
+  }
+
+  if (message.type === 'snapshot') {
+    draft.stream = {
+      ...draft.stream,
+      snapshot: message.payload,
+    }
+    draft.mode = toAppMode(message.payload.mode)
+    return
+  }
+
+  if (message.type === 'telemetry') {
+    const nextTelemetryByRobot = {
+      ...draft.stream.telemetryByRobot,
+      [message.payload.robotId]: message.payload,
+    }
+
+    const existingHistory = draft.stream.telemetryHistoryByRobot[message.payload.robotId] ?? []
+    const lastHistoryPoint = existingHistory[existingHistory.length - 1]
+    let nextTelemetryHistoryByRobot = draft.stream.telemetryHistoryByRobot
+    if (!lastHistoryPoint || lastHistoryPoint.ts !== message.payload.ts) {
+      nextTelemetryHistoryByRobot = {
+        ...draft.stream.telemetryHistoryByRobot,
+        [message.payload.robotId]: [
+          ...existingHistory,
+          {
+            ts: message.payload.ts,
+            speed: message.payload.speed,
+            battery: message.payload.battery,
+            localizationConfidence: message.payload.localizationConfidence,
+            temp: message.payload.temp,
+          },
+        ].slice(-180),
+      }
+    }
+
+    const existingTrail = draft.stream.trailsByRobot[message.payload.robotId] ?? []
+    const lastTrailPoint = existingTrail[existingTrail.length - 1]
+    let nextTrailsByRobot = draft.stream.trailsByRobot
+    const shouldAppendTrail =
+      !lastTrailPoint ||
+      lastTrailPoint.ts !== message.payload.ts ||
+      lastTrailPoint.x !== message.payload.pose.x ||
+      lastTrailPoint.y !== message.payload.pose.y
+    if (shouldAppendTrail) {
+      nextTrailsByRobot = {
+        ...draft.stream.trailsByRobot,
+        [message.payload.robotId]: [
+          ...existingTrail,
+          {
+            ts: message.payload.ts,
+            x: message.payload.pose.x,
+            y: message.payload.pose.y,
+            heading: message.payload.pose.heading,
+          },
+        ].slice(-24),
+      }
+    }
+
+    draft.stream = {
+      ...draft.stream,
+      telemetryByRobot: nextTelemetryByRobot,
+      telemetryHistoryByRobot: nextTelemetryHistoryByRobot,
+      trailsByRobot: nextTrailsByRobot,
+    }
+    return
+  }
+
+  if (message.type === 'event') {
+    const incomingEventId = eventIdentity(message.payload)
+    const hasEvent = draft.stream.recentEvents.some(
+      (eventItem) => eventIdentity(eventItem) === incomingEventId,
+    )
+
+    if (!hasEvent) {
+      draft.stream = {
+        ...draft.stream,
+        recentEvents: [message.payload, ...draft.stream.recentEvents].slice(0, 100),
+      }
+    }
+    return
+  }
+
+  if (message.type === 'incident') {
+    const hasIncident = draft.stream.recentIncidents.some(
+      (incident) => incident.incidentId === message.payload.incidentId,
+    )
+
+    if (!hasIncident) {
+      draft.stream = {
+        ...draft.stream,
+        recentIncidents: [message.payload, ...draft.stream.recentIncidents].slice(0, 100),
+      }
+    }
+    return
+  }
+
+  draft.stream = {
+    ...draft.stream,
+    heartbeat: message.payload,
+  }
+  draft.mode = toAppMode(message.payload.mode)
+  draft.ws = {
+    ...draft.ws,
+    runId: message.payload.runId,
+    lastHeartbeatAtTs: Date.now(),
+  }
+}
+
 export const createWsStreamSlice: StateCreator<AppStoreState, [], [], WsStreamSlice> = (set) => ({
   ws: initialWsState,
   stream: initialStreamState,
@@ -63,112 +184,43 @@ export const createWsStreamSlice: StateCreator<AppStoreState, [], [], WsStreamSl
       },
     })),
 
-  applyWsMessage: (message) =>
+  applyWsMessages: (messages) =>
     set((state) => {
-      const nextWs: WsState = {
-        ...state.ws,
-        lastStreamSeq: Math.max(state.ws.lastStreamSeq, message.streamSeq),
-        lastServerTs: message.serverTs,
-        errorMessage: null,
+      if (messages.length === 0) {
+        return {}
       }
 
-      const nextStream: StreamState = {
-        ...state.stream,
+      const draft: WsMutationDraft = {
+        mode: state.mode,
+        ws: state.ws,
+        stream: state.stream,
       }
 
-      let nextMode = state.mode
-
-      if (message.type === 'snapshot') {
-        nextStream.snapshot = message.payload
-        nextMode = toAppMode(message.payload.mode)
-      }
-
-      if (message.type === 'telemetry') {
-        nextStream.telemetryByRobot = {
-          ...state.stream.telemetryByRobot,
-          [message.payload.robotId]: message.payload,
-        }
-
-        const history = state.stream.telemetryHistoryByRobot[message.payload.robotId] ?? []
-        const lastHistoryPoint = history[history.length - 1]
-        if (!lastHistoryPoint || lastHistoryPoint.ts !== message.payload.ts) {
-          const nextHistory = [
-            ...history,
-            {
-              ts: message.payload.ts,
-              speed: message.payload.speed,
-              battery: message.payload.battery,
-              localizationConfidence: message.payload.localizationConfidence,
-              temp: message.payload.temp,
-            },
-          ].slice(-180)
-
-          nextStream.telemetryHistoryByRobot = {
-            ...state.stream.telemetryHistoryByRobot,
-            [message.payload.robotId]: nextHistory,
-          }
-        }
-
-        const existingTrail = state.stream.trailsByRobot[message.payload.robotId] ?? []
-        const lastPoint = existingTrail[existingTrail.length - 1]
-        const shouldAppend =
-          !lastPoint ||
-          lastPoint.ts !== message.payload.ts ||
-          lastPoint.x !== message.payload.pose.x ||
-          lastPoint.y !== message.payload.pose.y
-
-        if (shouldAppend) {
-          const appendedTrail = [
-            ...existingTrail,
-            {
-              ts: message.payload.ts,
-              x: message.payload.pose.x,
-              y: message.payload.pose.y,
-              heading: message.payload.pose.heading,
-            },
-          ].slice(-24)
-
-          nextStream.trailsByRobot = {
-            ...state.stream.trailsByRobot,
-            [message.payload.robotId]: appendedTrail,
-          }
-        }
-      }
-
-      if (message.type === 'event') {
-        const incomingEventId = eventIdentity(message.payload)
-        const hasEvent = state.stream.recentEvents.some(
-          (eventItem) => eventIdentity(eventItem) === incomingEventId,
-        )
-
-        if (!hasEvent) {
-          nextStream.recentEvents = [message.payload, ...state.stream.recentEvents].slice(0, 100)
-        }
-      }
-
-      if (message.type === 'incident') {
-        const hasIncident = state.stream.recentIncidents.some(
-          (incident) => incident.incidentId === message.payload.incidentId,
-        )
-        if (!hasIncident) {
-          nextStream.recentIncidents = [message.payload, ...state.stream.recentIncidents].slice(
-            0,
-            100,
-          )
-        }
-      }
-
-      if (message.type === 'heartbeat') {
-        nextStream.heartbeat = message.payload
-        nextMode = toAppMode(message.payload.mode)
-        nextWs.runId = message.payload.runId
-        nextWs.lastHeartbeatAtTs = Date.now()
+      for (const message of messages) {
+        applyIncomingWsMessage(draft, message)
       }
 
       return {
-        mode: nextMode,
-        ws: nextWs,
-        stream: nextStream,
+        mode: draft.mode,
+        ws: draft.ws,
+        stream: draft.stream,
+      }
+    }),
+
+  applyWsMessage: (message) =>
+    set((state) => {
+      const draft: WsMutationDraft = {
+        mode: state.mode,
+        ws: state.ws,
+        stream: state.stream,
+      }
+
+      applyIncomingWsMessage(draft, message)
+
+      return {
+        mode: draft.mode,
+        ws: draft.ws,
+        stream: draft.stream,
       }
     }),
 })

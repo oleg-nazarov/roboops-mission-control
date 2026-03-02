@@ -183,12 +183,12 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Sensors health matrix (OK/WARN/FAIL)
 
 ### Task 020 - Robot Detail: Logs + Actions
-- [ ] Live logs stream (INFO/WARN/ERROR)
-- [ ] Log level filters
-- [ ] Action buttons:
-  - [ ] Request operator assistance
-  - [ ] Pause/Resume mission
-  - [ ] Create incident ticket
+- [x] Live logs stream (INFO/WARN/ERROR)
+- [x] Log level filters
+- [x] Action buttons:
+  - [x] Request operator assistance
+  - [x] Pause/Resume mission
+  - [x] Create incident ticket
 
 ## Phase 4 - Incidents and Replay (Killer Feature)
 

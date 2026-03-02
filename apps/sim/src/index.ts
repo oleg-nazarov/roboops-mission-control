@@ -39,6 +39,7 @@ const envSchema = z.object({
   SIM_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(250).optional(),
   PING_INTERVAL_MS: z.coerce.number().int().min(250).optional(),
+  SNAPSHOT_INTERVAL_MS: z.coerce.number().int().min(250).default(1000),
   SIM_MODE: opsModeSchema.default('DELIVERY'),
   MODE_SWITCH_INTERVAL_MS: z.coerce.number().int().min(1000).optional(),
   ROBOT_COUNT: z.coerce.number().int().min(6).max(20).default(12),
@@ -53,6 +54,7 @@ const env = envSchema.parse({
   SIM_PORT: process.env.SIM_PORT ?? '8090',
   HEARTBEAT_INTERVAL_MS: process.env.HEARTBEAT_INTERVAL_MS,
   PING_INTERVAL_MS: process.env.PING_INTERVAL_MS,
+  SNAPSHOT_INTERVAL_MS: process.env.SNAPSHOT_INTERVAL_MS ?? '1000',
   SIM_MODE: process.env.SIM_MODE ?? 'DELIVERY',
   MODE_SWITCH_INTERVAL_MS: process.env.MODE_SWITCH_INTERVAL_MS,
   ROBOT_COUNT: process.env.ROBOT_COUNT ?? '12',
@@ -306,8 +308,6 @@ const scheduleFleetTick = (): void => {
   runLogger.logTelemetryBatch(telemetryBatch)
   runLogger.logEventBatch(tickResult.events)
 
-  publishSnapshot()
-
   for (const telemetry of telemetryBatch) {
     publishTelemetry(telemetry)
   }
@@ -383,6 +383,10 @@ const heartbeatTimer = setInterval(() => {
   publishHeartbeat()
 }, heartbeatIntervalMs)
 
+const snapshotTimer = setInterval(() => {
+  publishSnapshot()
+}, env.SNAPSHOT_INTERVAL_MS)
+
 const fleetLogTimer = setInterval(() => {
   const status = summarizeFleetStatuses(fleetState)
   const missionTypes = summarizeMissionTypes(fleetState)
@@ -424,6 +428,7 @@ const shutdown = (signal: string): void => {
     clearTimeout(fleetTickTimer)
   }
   clearInterval(heartbeatTimer)
+  clearInterval(snapshotTimer)
   clearInterval(fleetLogTimer)
   if (modeSwitchTimer) {
     clearInterval(modeSwitchTimer)
@@ -450,6 +455,7 @@ if (env.SIM_EXIT_AFTER_MS) {
 
 console.log(`[sim] ws server listening at ws://localhost:${env.SIM_PORT}`)
 console.log(`[sim] heartbeat interval: ${heartbeatIntervalMs}ms`)
+console.log(`[sim] snapshot interval: ${env.SNAPSHOT_INTERVAL_MS}ms`)
 console.log(`[sim] run session: ${runLogger.runId}`)
 console.log(`[sim] run log file: ${runLogger.filePath}`)
 console.log(

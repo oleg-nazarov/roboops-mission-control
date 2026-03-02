@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { startTransition, useCallback, useEffect, useRef } from 'react'
 import type { OpsMode as ContractOpsMode, WsClientMessage } from '@roboops/contracts'
 import { wsClientMessageSchema, wsServerMessageSchema } from '@roboops/contracts'
 import { useAppStore, type OpsMode } from '../state/appStore'
@@ -31,12 +31,41 @@ export const useOpsWebSocket = () => {
   const setWsStatus = useAppStore((state) => state.setWsStatus)
   const setWsUrl = useAppStore((state) => state.setWsUrl)
   const setWsError = useAppStore((state) => state.setWsError)
-  const applyWsMessage = useAppStore((state) => state.applyWsMessage)
+  const applyWsMessages = useAppStore((state) => state.applyWsMessages)
 
   const socketRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
   const pingTimerRef = useRef<number | null>(null)
+  const flushFrameRef = useRef<number | null>(null)
+  const queuedMessagesRef = useRef<ReturnType<typeof wsServerMessageSchema.parse>[]>([])
   const shouldReconnectRef = useRef(true)
+
+  const flushQueuedMessages = useCallback(() => {
+    flushFrameRef.current = null
+    if (queuedMessagesRef.current.length === 0) {
+      return
+    }
+
+    const payload = queuedMessagesRef.current
+    queuedMessagesRef.current = []
+    startTransition(() => {
+      applyWsMessages(payload)
+    })
+  }, [applyWsMessages])
+
+  const enqueueWsMessage = useCallback(
+    (message: ReturnType<typeof wsServerMessageSchema.parse>) => {
+      queuedMessagesRef.current.push(message)
+      if (flushFrameRef.current !== null) {
+        return
+      }
+
+      flushFrameRef.current = window.requestAnimationFrame(() => {
+        flushQueuedMessages()
+      })
+    },
+    [flushQueuedMessages],
+  )
 
   const clearPingTimer = useCallback(() => {
     if (pingTimerRef.current === null) {
@@ -126,7 +155,7 @@ export const useOpsWebSocket = () => {
             return
           }
 
-          applyWsMessage(parsedMessage.data)
+          enqueueWsMessage(parsedMessage.data)
         } catch {
           setWsError('Malformed WebSocket JSON payload')
         }
@@ -167,15 +196,22 @@ export const useOpsWebSocket = () => {
       shouldReconnectRef.current = false
       clearPingTimer()
       clearReconnectTimer()
+      if (flushFrameRef.current !== null) {
+        window.cancelAnimationFrame(flushFrameRef.current)
+        flushFrameRef.current = null
+      }
+      queuedMessagesRef.current = []
       const socket = socketRef.current
       socketRef.current = null
       socket?.close()
       setWsStatus('idle')
     }
   }, [
-    applyWsMessage,
+    applyWsMessages,
     clearPingTimer,
     clearReconnectTimer,
+    enqueueWsMessage,
+    flushQueuedMessages,
     sendClientMessage,
     setWsError,
     setWsStatus,
