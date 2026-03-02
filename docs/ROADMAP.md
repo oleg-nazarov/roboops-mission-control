@@ -193,14 +193,14 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 ## Phase 4 - Incidents and Replay (Killer Feature)
 
 ### Task 021 - Incidents list page
-- [ ] Incidents table/list fields:
-  - [ ] type
-  - [ ] severity
-  - [ ] timestamp
-  - [ ] robot_id
-  - [ ] mission_id
-- [ ] Add filters by type/severity/robot
-- [ ] Add `Replay` action
+- [x] Incidents table/list fields:
+  - [x] type
+  - [x] severity
+  - [x] timestamp
+  - [x] robot_id
+  - [x] mission_id
+- [x] Add filters by type/severity/robot
+- [x] Add `Replay` action
 
 ### Task 022 - Replay data loader from JSONL
 - [ ] Parse `runId.jsonl`
