@@ -36,6 +36,16 @@ export type WsState = {
 export type StreamState = {
   snapshot: FleetSnapshotPayload | null
   telemetryByRobot: Record<string, Telemetry>
+  telemetryHistoryByRobot: Record<
+    string,
+    Array<{
+      ts: number
+      speed: number
+      battery: number
+      localizationConfidence: number
+      temp: number
+    }>
+  >
   trailsByRobot: Record<string, Array<{ ts: number; x: number; y: number; heading: number }>>
   recentEvents: OpsEvent[]
   recentIncidents: OpsIncident[]

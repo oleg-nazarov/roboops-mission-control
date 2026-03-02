@@ -15,6 +15,7 @@ const initialWsState: WsState = {
 const initialStreamState: StreamState = {
   snapshot: null,
   telemetryByRobot: {},
+  telemetryHistoryByRobot: {},
   trailsByRobot: {},
   recentEvents: [],
   recentIncidents: [],
@@ -86,6 +87,26 @@ export const createWsStreamSlice: StateCreator<AppStoreState, [], [], WsStreamSl
         nextStream.telemetryByRobot = {
           ...state.stream.telemetryByRobot,
           [message.payload.robotId]: message.payload,
+        }
+
+        const history = state.stream.telemetryHistoryByRobot[message.payload.robotId] ?? []
+        const lastHistoryPoint = history[history.length - 1]
+        if (!lastHistoryPoint || lastHistoryPoint.ts !== message.payload.ts) {
+          const nextHistory = [
+            ...history,
+            {
+              ts: message.payload.ts,
+              speed: message.payload.speed,
+              battery: message.payload.battery,
+              localizationConfidence: message.payload.localizationConfidence,
+              temp: message.payload.temp,
+            },
+          ].slice(-180)
+
+          nextStream.telemetryHistoryByRobot = {
+            ...state.stream.telemetryHistoryByRobot,
+            [message.payload.robotId]: nextHistory,
+          }
         }
 
         const existingTrail = state.stream.trailsByRobot[message.payload.robotId] ?? []

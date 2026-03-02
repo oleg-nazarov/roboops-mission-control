@@ -178,9 +178,9 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
   - [x] Create incident ticket
 
 ### Task 019 - Robot Detail: Telemetry + Sensors
-- [ ] Telemetry charts (speed, battery, confidence, temp)
-- [ ] CPU and memory mock metrics
-- [ ] Sensors health matrix (OK/WARN/FAIL)
+- [x] Telemetry charts (speed, battery, confidence, temp)
+- [x] CPU and memory mock metrics
+- [x] Sensors health matrix (OK/WARN/FAIL)
 
 ### Task 020 - Robot Detail: Logs + Actions
 - [ ] Live logs stream (INFO/WARN/ERROR)
