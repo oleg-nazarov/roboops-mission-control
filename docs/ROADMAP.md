@@ -208,9 +208,9 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Extract WARN/ERROR markers
 
 ### Task 023 - Replay viewer timeline + scrubber
-- [ ] Time slider with active time cursor
-- [ ] Play/Pause/Speed (0.5x/1x/2x)
-- [ ] Jump-to-event from markers
+- [x] Time slider with active time cursor
+- [x] Play/Pause/Speed (0.5x/1x/2x)
+- [x] Jump-to-event from markers
 
 ### Task 024 - Replay map + metrics sync
 - [ ] Replay map/floorplan mode

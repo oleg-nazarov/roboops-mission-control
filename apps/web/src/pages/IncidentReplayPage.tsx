@@ -83,6 +83,26 @@ export function IncidentReplayPage() {
 
   const rangeMin = replayQuery.data?.startedAtTs ?? 0
   const rangeMax = replayQuery.data?.endedAtTs ?? 0
+  const clampedCursorTs = Math.min(Math.max(replayCursorTs, rangeMin), rangeMax)
+  const replayDurationMs = Math.max(0, rangeMax - rangeMin)
+  const cursorProgressPct =
+    replayDurationMs > 0 ? ((clampedCursorTs - rangeMin) / replayDurationMs) * 100 : 0
+
+  const timelineRows = useMemo(() => {
+    const timeline = replayQuery.data?.timeline ?? []
+    if (timeline.length === 0) {
+      return []
+    }
+
+    return [...timeline]
+      .sort((left, right) => right.ts - left.ts)
+      .slice(0, 24)
+  }, [replayQuery.data?.timeline])
+
+  const jumpToTs = (ts: number): void => {
+    setReplayPlaying(false)
+    setReplayCursorTs(ts)
+  }
 
   return (
     <section className="panel animate-shell-in p-5 [animation-delay:80ms]">
@@ -124,12 +144,20 @@ export function IncidentReplayPage() {
                 className="w-full"
                 max={rangeMax}
                 min={rangeMin}
-                onChange={(event) => setReplayCursorTs(Number(event.target.value))}
-                step={1000}
+                onChange={(event) => jumpToTs(Number(event.target.value))}
+                step={200}
                 type="range"
-                value={Math.min(Math.max(replayCursorTs, rangeMin), rangeMax)}
+                value={clampedCursorTs}
               />
             </label>
+
+            <div className="mt-3 grid gap-2 text-xs text-muted md:grid-cols-3">
+              <p>Cursor: {formatTs(clampedCursorTs)}</p>
+              <p>
+                Progress: {cursorProgressPct.toFixed(1)}% ({Math.round((clampedCursorTs - rangeMin) / 1000)}s)
+              </p>
+              <p>Window: {Math.round(replayDurationMs / 1000)}s</p>
+            </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
@@ -169,6 +197,29 @@ export function IncidentReplayPage() {
               </div>
             ) : (
               <p className="mt-2 text-sm text-muted">No metric sample available.</p>
+            )}
+          </div>
+
+          <div className="rounded-panel border border-border/60 bg-surface-elevated/55 p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-muted">Timeline Events (Jump)</p>
+            {timelineRows.length === 0 ? (
+              <p className="mt-2 text-sm text-muted">No timeline events available.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {timelineRows.map((eventItem, index) => (
+                  <button
+                    className="flex w-full cursor-pointer items-start justify-between gap-3 rounded-panel border border-border/60 bg-surface/55 px-3 py-2 text-left text-sm transition hover:border-accent/45"
+                    key={`${eventItem.ts}-${eventItem.eventType}-${index}`}
+                    onClick={() => jumpToTs(eventItem.ts)}
+                    type="button"
+                  >
+                    <span className="min-w-0 text-muted">
+                      [{eventItem.level}] {eventItem.eventType} - {eventItem.message}
+                    </span>
+                    <span className="shrink-0 font-mono text-xs text-muted">{formatTs(eventItem.ts)}</span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </div>
