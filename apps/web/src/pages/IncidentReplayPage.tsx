@@ -14,6 +14,50 @@ const EVENT_LEVEL_WEIGHT: Record<'INFO' | 'WARN' | 'ERROR', number> = {
   ERROR: 3,
 }
 
+type IncidentReportMetricSnapshot = {
+  ts: number
+  battery: number
+  speed: number
+  localizationConfidence: number
+  errors: number
+} | null
+
+type IncidentReportData = {
+  reportVersion: string
+  generatedAtTs: number
+  generatedAtIso: string
+  incidentId: string
+  runId: string
+  robotId: string
+  mode: 'DELIVERY' | 'WAREHOUSE'
+  summary: string
+  replay: {
+    deepLink: string
+    anchorTs: number
+    anchorIso: string
+    window: {
+      startedAtTs: number
+      startedAtIso: string
+      endedAtTs: number
+      endedAtIso: string
+    }
+  }
+  metrics: {
+    before: IncidentReportMetricSnapshot
+    during: IncidentReportMetricSnapshot
+    after: IncidentReportMetricSnapshot
+  }
+  timeline: Array<{
+    ts: number
+    iso: string
+    level: 'INFO' | 'WARN' | 'ERROR'
+    eventType: string
+    message: string
+    robotId: string
+    missionId: string | null
+  }>
+}
+
 const formatTs = (ts: number): string =>
   new Date(ts).toLocaleTimeString('en-US', {
     hour: '2-digit',
@@ -22,6 +66,75 @@ const formatTs = (ts: number): string =>
   })
 
 const formatIsoTs = (ts: number): string => new Date(ts).toISOString()
+
+const formatMetricValue = (metric: IncidentReportMetricSnapshot, key: 'battery' | 'speed' | 'localizationConfidence' | 'errors'): string => {
+  if (!metric) {
+    return 'n/a'
+  }
+  if (key === 'battery') {
+    return `${metric.battery.toFixed(2)}%`
+  }
+  if (key === 'speed') {
+    return `${metric.speed.toFixed(3)} m/s`
+  }
+  if (key === 'localizationConfidence') {
+    return metric.localizationConfidence.toFixed(3)
+  }
+  return String(metric.errors)
+}
+
+const formatMetricTs = (metric: IncidentReportMetricSnapshot): string =>
+  metric ? formatIsoTs(metric.ts) : 'n/a'
+
+const downloadTextFile = (fileName: string, content: string, mimeType: string): void => {
+  const blob = new Blob([content], { type: mimeType })
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(objectUrl)
+}
+
+const buildIncidentReportMarkdown = (report: IncidentReportData): string => {
+  const timelineLines =
+    report.timeline.length === 0
+      ? ['No key timeline events available.']
+      : report.timeline.map(
+          (eventItem, index) =>
+            `${index + 1}. ${eventItem.iso} [${eventItem.level}] ${eventItem.eventType} - ${eventItem.message} (robot: ${eventItem.robotId}, mission: ${eventItem.missionId ?? 'n/a'})`,
+        )
+
+  return [
+    `# Incident Report: ${report.incidentId}`,
+    '',
+    `Generated at: ${report.generatedAtIso}`,
+    '',
+    '## Summary',
+    report.summary,
+    '',
+    '## Context',
+    `- Run ID: ${report.runId}`,
+    `- Robot ID: ${report.robotId}`,
+    `- Mode: ${report.mode}`,
+    `- Replay window: ${report.replay.window.startedAtIso} -> ${report.replay.window.endedAtIso}`,
+    `- Replay anchor: ${report.replay.anchorIso}`,
+    '',
+    '## Metrics (Before / During / After)',
+    '| Phase | Timestamp | Battery | Speed | Localization Confidence | Errors |',
+    '| --- | --- | --- | --- | --- | --- |',
+    `| Before | ${formatMetricTs(report.metrics.before)} | ${formatMetricValue(report.metrics.before, 'battery')} | ${formatMetricValue(report.metrics.before, 'speed')} | ${formatMetricValue(report.metrics.before, 'localizationConfidence')} | ${formatMetricValue(report.metrics.before, 'errors')} |`,
+    `| During | ${formatMetricTs(report.metrics.during)} | ${formatMetricValue(report.metrics.during, 'battery')} | ${formatMetricValue(report.metrics.during, 'speed')} | ${formatMetricValue(report.metrics.during, 'localizationConfidence')} | ${formatMetricValue(report.metrics.during, 'errors')} |`,
+    `| After | ${formatMetricTs(report.metrics.after)} | ${formatMetricValue(report.metrics.after, 'battery')} | ${formatMetricValue(report.metrics.after, 'speed')} | ${formatMetricValue(report.metrics.after, 'localizationConfidence')} | ${formatMetricValue(report.metrics.after, 'errors')} |`,
+    '',
+    `## Key Timeline (${report.timeline.length} events)`,
+    ...timelineLines,
+    '',
+    '## Replay',
+    report.replay.deepLink,
+    '',
+  ].join('\n')
+}
 
 const findClosestMetric = (
   metrics: Array<{
@@ -142,6 +255,9 @@ export function IncidentReplayPage() {
   const advanceReplayCursor = useAppStore((state) => state.advanceReplayCursor)
   const resetReplay = useAppStore((state) => state.resetReplay)
   const [lastReportGeneratedAt, setLastReportGeneratedAt] = useState<number | null>(null)
+  const [reportMarkdownPreview, setReportMarkdownPreview] = useState<string>('')
+  const [reportReplayLink, setReportReplayLink] = useState<string>('')
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
 
   useEffect(() => {
     resetReplay(0)
@@ -240,12 +356,13 @@ export function IncidentReplayPage() {
     setReplayCursorTs(ts)
   }
 
-  const generateIncidentReport = useCallback(() => {
+  const createIncidentReportArtifacts = useCallback(() => {
     if (!replayQuery.data || !incidentId) {
-      return
+      return null
     }
 
     const dataset = replayQuery.data
+    const generatedAtTs = Date.now()
     const metrics = dataset.metrics ?? []
     const beforeMetric = findClosestMetric(metrics, incidentAnchorTs - METRIC_OFFSET_MS)
     const duringMetric = findClosestMetric(metrics, incidentAnchorTs)
@@ -261,10 +378,10 @@ export function IncidentReplayPage() {
 
     const replayDeepLink = `${window.location.origin}/incidents/${encodeURIComponent(incidentId)}/replay?cursorTs=${incidentAnchorTs}`
 
-    const report = {
+    const report: IncidentReportData = {
       reportVersion: '1.0',
-      generatedAtTs: Date.now(),
-      generatedAtIso: formatIsoTs(Date.now()),
+      generatedAtTs,
+      generatedAtIso: formatIsoTs(generatedAtTs),
       incidentId,
       runId: dataset.runId,
       robotId: dataset.robotId,
@@ -297,17 +414,62 @@ export function IncidentReplayPage() {
       })),
     }
 
-    const fileName = `${incidentId}-report-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
-    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
-    const objectUrl = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = objectUrl
-    link.download = fileName
-    link.click()
-    URL.revokeObjectURL(objectUrl)
-
-    setLastReportGeneratedAt(Date.now())
+    const markdown = buildIncidentReportMarkdown(report)
+    return {
+      report,
+      markdown,
+      generatedAtTs,
+    }
   }, [incidentAnchorTs, incidentId, replayQuery.data])
+
+  const copyToClipboard = useCallback(async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopyFeedback(`${label} copied`)
+    } catch {
+      setCopyFeedback(`${label} copy failed`)
+    }
+  }, [])
+
+  const generateIncidentReportJson = useCallback(() => {
+    const artifacts = createIncidentReportArtifacts()
+    if (!artifacts || !incidentId) {
+      return
+    }
+
+    const fileName = `${incidentId}-report-${new Date(artifacts.generatedAtTs).toISOString().replace(/[:.]/g, '-')}.json`
+    downloadTextFile(fileName, JSON.stringify(artifacts.report, null, 2), 'application/json')
+    setReportMarkdownPreview(artifacts.markdown)
+    setReportReplayLink(artifacts.report.replay.deepLink)
+    setLastReportGeneratedAt(artifacts.generatedAtTs)
+  }, [createIncidentReportArtifacts, incidentId])
+
+  const generateIncidentReportMarkdown = useCallback(() => {
+    const artifacts = createIncidentReportArtifacts()
+    if (!artifacts || !incidentId) {
+      return
+    }
+
+    const fileName = `${incidentId}-report-${new Date(artifacts.generatedAtTs).toISOString().replace(/[:.]/g, '-')}.md`
+    downloadTextFile(fileName, artifacts.markdown, 'text/markdown')
+    setReportMarkdownPreview(artifacts.markdown)
+    setReportReplayLink(artifacts.report.replay.deepLink)
+    setLastReportGeneratedAt(artifacts.generatedAtTs)
+  }, [createIncidentReportArtifacts, incidentId])
+
+  useEffect(() => {
+    if (!copyFeedback) {
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      setCopyFeedback(null)
+    }, 2200)
+
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [copyFeedback])
 
   return (
     <section className="panel animate-shell-in p-5 [animation-delay:80ms]">
@@ -346,10 +508,17 @@ export function IncidentReplayPage() {
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-accent/45"
-                onClick={generateIncidentReport}
+                onClick={generateIncidentReportJson}
                 type="button"
               >
                 Generate Report JSON
+              </button>
+              <button
+                className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-accent/45"
+                onClick={generateIncidentReportMarkdown}
+                type="button"
+              >
+                Export Report Markdown
               </button>
               {lastReportGeneratedAt ? (
                 <span className="text-xs text-muted">
@@ -357,6 +526,40 @@ export function IncidentReplayPage() {
                 </span>
               ) : null}
             </div>
+          </div>
+
+          <div className="rounded-panel border border-border/60 bg-surface-elevated/55 p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-muted">Copy and Share</p>
+            {reportMarkdownPreview ? (
+              <>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-accent/45"
+                    onClick={() => copyToClipboard(reportMarkdownPreview, 'Markdown')}
+                    type="button"
+                  >
+                    Copy Markdown
+                  </button>
+                  <button
+                    className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-accent/45"
+                    onClick={() => copyToClipboard(reportReplayLink, 'Replay link')}
+                    type="button"
+                  >
+                    Copy Replay Link
+                  </button>
+                  {copyFeedback ? <span className="text-xs text-muted">{copyFeedback}</span> : null}
+                </div>
+                <textarea
+                  className="mt-3 h-44 w-full resize-y rounded-panel border border-border/70 bg-surface px-3 py-2 font-mono text-xs text-muted outline-none"
+                  readOnly
+                  value={reportMarkdownPreview}
+                />
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-muted">
+                Generate JSON or Markdown report first to enable copy/share actions.
+              </p>
+            )}
           </div>
 
           <ReplaySceneCanvas

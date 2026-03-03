@@ -233,9 +233,9 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Export `.json`
 
 ### Task 026 - Incident report export (Markdown)
-- [ ] Add markdown report template
-- [ ] Export `.md`
-- [ ] Add copy/share block
+- [x] Add markdown report template
+- [x] Export `.md`
+- [x] Add copy/share block
 
 ## Phase 6 - Quality, Demo, Packaging
 
