@@ -53,6 +53,8 @@ export function LiveMapPage() {
   const snapshot = useAppStore((state) => state.stream.snapshot)
   const telemetryByRobot = useAppStore((state) => state.stream.telemetryByRobot)
   const trailsByRobot = useAppStore((state) => state.stream.trailsByRobot)
+  const wsStatus = useAppStore((state) => state.ws.status)
+  const wsErrorMessage = useAppStore((state) => state.ws.errorMessage)
   const selectedRobotId = useAppStore((state) => state.selectedRobotId)
   const setSelectedRobotId = useAppStore((state) => state.setSelectedRobotId)
   const operatorActionsByRobot = useAppStore((state) => state.operatorActions.byRobot)
@@ -129,6 +131,7 @@ export function LiveMapPage() {
       })
       .sort((left, right) => left.robotId.localeCompare(right.robotId))
   }, [missionByRobotId, snapshot?.robots, snapshotRobotById, telemetryByRobot])
+  const hasRobotData = robotDetails.length > 0
 
   const mapRobots = useMemo<LiveRobotMapData[]>(
     () =>
@@ -192,6 +195,20 @@ export function LiveMapPage() {
           Trails up to 24 points
         </span>
       </div>
+
+      {wsErrorMessage ? (
+        <div className="rounded-panel border border-status-fault/45 bg-status-fault/10 p-3 text-sm text-status-fault">
+          Stream error: {wsErrorMessage}
+        </div>
+      ) : null}
+
+      {!wsErrorMessage && !hasRobotData ? (
+        <div className="rounded-panel border border-border/60 bg-surface-elevated/50 p-3 text-sm text-muted">
+          {wsStatus === 'connecting' || wsStatus === 'reconnecting'
+            ? 'Waiting for first robot positions...'
+            : 'No live robot positions available yet.'}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         {mode === 'delivery' ? (

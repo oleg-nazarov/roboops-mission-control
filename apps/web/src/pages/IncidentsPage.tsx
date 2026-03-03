@@ -31,6 +31,9 @@ const severityBadgeClassName: Record<Severity, string> = {
 
 export function IncidentsPage() {
   const recentIncidents = useAppStore((state) => state.stream.recentIncidents)
+  const wsStatus = useAppStore((state) => state.ws.status)
+  const wsErrorMessage = useAppStore((state) => state.ws.errorMessage)
+  const lastHeartbeatAtTs = useAppStore((state) => state.ws.lastHeartbeatAtTs)
   const [typeFilter, setTypeFilter] = useState<IncidentType | 'ALL'>('ALL')
   const [severityFilter, setSeverityFilter] = useState<Severity | 'ALL'>('ALL')
   const [robotFilter, setRobotFilter] = useState<string>('ALL')
@@ -61,6 +64,11 @@ export function IncidentsPage() {
       }),
     [allIncidents, robotFilter, severityFilter, typeFilter],
   )
+  const hasIncidents = allIncidents.length > 0
+  const isWaitingForInitialStream =
+    !hasIncidents &&
+    lastHeartbeatAtTs === null &&
+    (wsStatus === 'connecting' || wsStatus === 'reconnecting' || wsStatus === 'connected')
 
   const resetFilters = (): void => {
     setTypeFilter('ALL')
@@ -73,6 +81,24 @@ export function IncidentsPage() {
       <p className="text-xs uppercase tracking-[0.18em] text-muted">Incidents</p>
       <h2 className="mt-2 font-display text-lg font-semibold">Incident Queue</h2>
       <p className="mt-3 max-w-3xl text-sm text-muted">Filter by type, severity, and robot, then jump directly into replay.</p>
+
+      {wsErrorMessage ? (
+        <div className="mt-4 rounded-panel border border-status-fault/45 bg-status-fault/10 p-3 text-sm text-status-fault">
+          Stream error: {wsErrorMessage}
+        </div>
+      ) : null}
+
+      {!wsErrorMessage && isWaitingForInitialStream ? (
+        <div className="mt-4 rounded-panel border border-border/60 bg-surface-elevated/50 p-3 text-sm text-muted">
+          Waiting for incident stream data...
+        </div>
+      ) : null}
+
+      {!wsErrorMessage && !isWaitingForInitialStream && !hasIncidents ? (
+        <div className="mt-4 rounded-panel border border-border/60 bg-surface-elevated/50 p-3 text-sm text-muted">
+          No incidents recorded yet in this session.
+        </div>
+      ) : null}
 
       <div className="mt-5 grid gap-4 rounded-panel border border-border/60 bg-surface-elevated/55 p-4 md:grid-cols-[1fr_1fr_1fr_auto]">
         <label className="block">
@@ -149,7 +175,7 @@ export function IncidentsPage() {
             {filteredIncidents.length === 0 ? (
               <tr>
                 <td className="px-3 py-4 text-muted" colSpan={7}>
-                  No incidents match current filters.
+                  {hasIncidents ? 'No incidents match current filters.' : 'No incidents yet.'}
                 </td>
               </tr>
             ) : (

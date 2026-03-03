@@ -5,6 +5,7 @@ import { IncidentReplayPage } from './pages/IncidentReplayPage'
 import { IncidentsPage } from './pages/IncidentsPage'
 import { LiveMapPage } from './pages/LiveMapPage'
 import { RobotDetailPage } from './pages/RobotDetailPage'
+import { ToastViewport } from './components/ToastViewport'
 import { useAppStore, type OpsMode, type WsConnectionStatus } from './state/appStore'
 import { useOpsWebSocket } from './ws/useOpsWebSocket'
 
@@ -188,6 +189,7 @@ function App() {
           </Routes>
         </main>
       </div>
+      <ToastViewport />
     </div>
   )
 }

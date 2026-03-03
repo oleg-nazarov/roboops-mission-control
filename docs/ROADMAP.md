@@ -240,9 +240,9 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 ## Phase 6 - Quality, Demo, Packaging
 
 ### Task 027 - Error handling + UX polish
-- [ ] Add loading/empty/error states on key screens
-- [ ] Add toasts for actions
-- [ ] Add keyboard shortcuts (search, replay play/pause)
+- [x] Add loading/empty/error states on key screens
+- [x] Add toasts for actions
+- [x] Add keyboard shortcuts (search, replay play/pause)
 
 ### Task 028 - Testing baseline
 - [ ] Unit tests:

@@ -86,6 +86,21 @@ const formatMetricValue = (metric: IncidentReportMetricSnapshot, key: 'battery' 
 const formatMetricTs = (metric: IncidentReportMetricSnapshot): string =>
   metric ? formatIsoTs(metric.ts) : 'n/a'
 
+const isInteractiveTarget = (eventTarget: EventTarget | null): boolean => {
+  if (!(eventTarget instanceof HTMLElement)) {
+    return false
+  }
+
+  const tagName = eventTarget.tagName
+  return (
+    eventTarget.isContentEditable ||
+    tagName === 'INPUT' ||
+    tagName === 'TEXTAREA' ||
+    tagName === 'SELECT' ||
+    tagName === 'BUTTON'
+  )
+}
+
 const downloadTextFile = (fileName: string, content: string, mimeType: string): void => {
   const blob = new Blob([content], { type: mimeType })
   const objectUrl = URL.createObjectURL(blob)
@@ -471,6 +486,26 @@ export function IncidentReplayPage() {
     }
   }, [copyFeedback])
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.code !== 'Space' || event.repeat) {
+        return
+      }
+
+      if (!replayQuery.data || isInteractiveTarget(event.target)) {
+        return
+      }
+
+      event.preventDefault()
+      setReplayPlaying(!replayIsPlaying)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [replayIsPlaying, replayQuery.data, setReplayPlaying])
+
   return (
     <section className="panel animate-shell-in p-5 [animation-delay:80ms]">
       <p className="text-xs uppercase tracking-[0.18em] text-muted">Replay</p>
@@ -481,15 +516,21 @@ export function IncidentReplayPage() {
       </p>
 
       {replayQuery.isLoading ? (
-        <p className="mt-4 text-sm text-muted">Loading replay data...</p>
+        <div className="mt-4 rounded-panel border border-border/60 bg-surface-elevated/50 p-3 text-sm text-muted">
+          Loading replay data...
+        </div>
       ) : null}
 
       {replayQuery.isError ? (
-        <p className="mt-4 text-sm text-status-fault">Failed to load incident replay data.</p>
+        <div className="mt-4 rounded-panel border border-status-fault/45 bg-status-fault/10 p-3 text-sm text-status-fault">
+          Failed to load incident replay data.
+        </div>
       ) : null}
 
       {!replayQuery.isLoading && !replayQuery.isError && !replayQuery.data ? (
-        <p className="mt-4 text-sm text-muted">No replay dataset found for this incident.</p>
+        <div className="mt-4 rounded-panel border border-border/60 bg-surface-elevated/50 p-3 text-sm text-muted">
+          No replay dataset found for this incident.
+        </div>
       ) : null}
 
       {replayQuery.data ? (
@@ -601,6 +642,7 @@ export function IncidentReplayPage() {
               >
                 {replayIsPlaying ? 'Pause' : 'Play'}
               </button>
+              <span className="text-xs text-muted">Shortcut: Space</span>
 
               {speedOptions.map((speed) => (
                 <button

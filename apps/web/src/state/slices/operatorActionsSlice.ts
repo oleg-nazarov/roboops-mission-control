@@ -72,10 +72,11 @@ const buildLocalIncident = (input: {
 
 export const createOperatorActionsSlice: StateCreator<AppStoreState, [], [], OperatorActionsSlice> = (
   set,
+  get,
 ) => ({
   operatorActions: initialOperatorActionsState,
 
-  requestOperatorAssistance: ({ robotId, missionId }) =>
+  requestOperatorAssistance: ({ robotId, missionId }) => {
     set((state) => {
       const now = Date.now()
       const previous = withRobotActionState(state.operatorActions.byRobot, robotId)
@@ -108,9 +109,18 @@ export const createOperatorActionsSlice: StateCreator<AppStoreState, [], [], Ope
           recentEvents: [localEvent, ...state.stream.recentEvents].slice(0, 100),
         },
       }
-    }),
+    })
 
-  toggleRobotMissionPause: ({ robotId, missionId }) =>
+    get().pushToast({
+      title: 'Operator assistance requested',
+      description: `${robotId}${missionId ? ` (${missionId})` : ''}`,
+      tone: 'warn',
+    })
+  },
+
+  toggleRobotMissionPause: ({ robotId, missionId }) => {
+    const wasPaused = get().operatorActions.byRobot[robotId]?.missionPaused ?? false
+
     set((state) => {
       const now = Date.now()
       const previous = withRobotActionState(state.operatorActions.byRobot, robotId)
@@ -146,7 +156,14 @@ export const createOperatorActionsSlice: StateCreator<AppStoreState, [], [], Ope
           recentEvents: [localEvent, ...state.stream.recentEvents].slice(0, 100),
         },
       }
-    }),
+    })
+
+    get().pushToast({
+      title: wasPaused ? 'Mission resumed' : 'Mission paused',
+      description: `${robotId}${missionId ? ` (${missionId})` : ''}`,
+      tone: wasPaused ? 'success' : 'info',
+    })
+  },
 
   createIncidentTicket: ({ robotId, missionId }) => {
     let createdIncidentId = ''
@@ -200,6 +217,12 @@ export const createOperatorActionsSlice: StateCreator<AppStoreState, [], [], Ope
           recentEvents: [localEvent, ...state.stream.recentEvents].slice(0, 100),
         },
       }
+    })
+
+    get().pushToast({
+      title: 'Incident ticket created',
+      description: `${createdIncidentId} for ${robotId}`,
+      tone: 'error',
     })
 
     return createdIncidentId

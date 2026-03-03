@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RobotStatus } from '@roboops/contracts'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore, type FleetStatusFilter } from '../state/appStore'
@@ -48,13 +48,17 @@ export function FleetPage() {
   const recentEvents = useAppStore((state) => state.stream.recentEvents)
   const recentIncidents = useAppStore((state) => state.stream.recentIncidents)
   const wsStatus = useAppStore((state) => state.ws.status)
+  const wsErrorMessage = useAppStore((state) => state.ws.errorMessage)
   const [sortKey, setSortKey] = useState<FleetSortKey>('robotId')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [nowTs, setNowTs] = useState(() => Date.now())
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
 
   const telemetryCount = Object.keys(telemetryByRobot).length
   const liveTick = heartbeat?.tick ?? snapshot?.tick
   const liveMode = heartbeat?.mode ?? snapshot?.mode
+  const hasFleetData = Boolean(snapshot) || telemetryCount > 0
+  const isWaitingForFirstSnapshot = !hasFleetData && wsStatus !== 'error'
   const snapshotRobots = snapshot?.robots
   const snapshotRobotById = useMemo(
     () => new Map((snapshotRobots ?? []).map((robot) => [robot.robotId, robot])),
@@ -68,6 +72,43 @@ export function FleetPage() {
 
     return () => {
       window.clearInterval(timer)
+    }
+  }, [])
+
+  useEffect(() => {
+    const isEditableTarget = (eventTarget: EventTarget | null): boolean => {
+      if (!(eventTarget instanceof HTMLElement)) {
+        return false
+      }
+
+      const tagName = eventTarget.tagName
+      return (
+        eventTarget.isContentEditable ||
+        tagName === 'INPUT' ||
+        tagName === 'TEXTAREA' ||
+        tagName === 'SELECT'
+      )
+    }
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (isEditableTarget(event.target)) {
+        return
+      }
+
+      const isSlash = event.key === '/'
+      const isCtrlK = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k'
+      if (!isSlash && !isCtrlK) {
+        return
+      }
+
+      event.preventDefault()
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
     }
   }, [])
 
@@ -219,18 +260,33 @@ export function FleetPage() {
         )}
       </div>
 
+      {wsErrorMessage ? (
+        <div className="mt-4 rounded-panel border border-status-fault/45 bg-status-fault/10 p-3 text-sm text-status-fault">
+          Stream error: {wsErrorMessage}
+        </div>
+      ) : null}
+
+      {isWaitingForFirstSnapshot ? (
+        <div className="mt-4 rounded-panel border border-border/60 bg-surface-elevated/50 p-3 text-sm text-muted">
+          Waiting for first fleet snapshot...
+        </div>
+      ) : null}
+
       <div className="mt-5 grid gap-4 rounded-panel border border-border/60 bg-surface-elevated/55 p-4 md:grid-cols-[1fr_auto]">
         <label className="block">
           <span className="mb-2 block text-xs uppercase tracking-[0.14em] text-muted">
             Search by robot id
           </span>
           <input
+            id="fleet-search-input"
             className="w-full rounded-panel border border-border/70 bg-surface px-3 py-2 text-sm outline-none transition focus:border-accent/60"
             onChange={(event) => setFleetSearchQuery(event.target.value)}
             placeholder="RBT-001"
+            ref={searchInputRef}
             type="text"
             value={searchQuery}
           />
+          <p className="mt-1 text-xs text-muted">Shortcut: / or Ctrl+K</p>
         </label>
 
         <button
@@ -297,7 +353,9 @@ export function FleetPage() {
             {rows.length === 0 ? (
               <tr>
                 <td className="px-3 py-4 text-muted" colSpan={8}>
-                  No robots match current filter criteria.
+                  {hasFleetData
+                    ? 'No robots match current filter criteria.'
+                    : 'No robots in stream yet.'}
                 </td>
               </tr>
             ) : (

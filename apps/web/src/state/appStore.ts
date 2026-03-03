@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 import { createFleetFiltersSlice } from './slices/fleetFiltersSlice'
 import { createOperatorActionsSlice } from './slices/operatorActionsSlice'
 import { createReplaySlice } from './slices/replaySlice'
+import { createToastSlice } from './slices/toastSlice'
 import { createUiSlice } from './slices/uiSlice'
 import { createWsStreamSlice } from './slices/wsStreamSlice'
 import type { AppStoreState } from './types'
@@ -20,6 +21,10 @@ export type {
   ReplaySpeed,
   ReplayState,
   StreamState,
+  ToastItem,
+  ToastSlice,
+  ToastState,
+  ToastTone,
   UiSlice,
   WsConnectionStatus,
   WsState,
@@ -34,6 +39,7 @@ export const useAppStore = create<AppStoreState>()(
       ...createReplaySlice(...args),
       ...createWsStreamSlice(...args),
       ...createOperatorActionsSlice(...args),
+      ...createToastSlice(...args),
     }),
     {
       name: 'roboops-fleet-filters',

@@ -11,6 +11,7 @@ export type OpsMode = 'delivery' | 'warehouse'
 export type FleetStatusFilter = 'FAULT' | 'NEED_ASSIST' | 'OFFLINE'
 export type ReplaySpeed = 0.5 | 1 | 2
 export type WsConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error'
+export type ToastTone = 'info' | 'success' | 'warn' | 'error'
 
 export type FleetFiltersState = {
   statusFilters: FleetStatusFilter[]
@@ -64,6 +65,19 @@ export type OperatorActionsState = {
   nextLocalIncidentSeq: number
 }
 
+export type ToastItem = {
+  toastId: string
+  title: string
+  description?: string
+  tone: ToastTone
+  createdAtTs: number
+}
+
+export type ToastState = {
+  items: ToastItem[]
+  nextToastSeq: number
+}
+
 export type UiSlice = {
   mode: OpsMode
   selectedRobotId: string | null
@@ -104,4 +118,16 @@ export type OperatorActionsSlice = {
   createIncidentTicket: (input: { robotId: string; missionId: string | null }) => string
 }
 
-export type AppStoreState = UiSlice & FleetFiltersSlice & ReplaySlice & WsStreamSlice & OperatorActionsSlice
+export type ToastSlice = {
+  toast: ToastState
+  pushToast: (input: { title: string; description?: string; tone?: ToastTone }) => string
+  removeToast: (toastId: string) => void
+  clearToasts: () => void
+}
+
+export type AppStoreState = UiSlice &
+  FleetFiltersSlice &
+  ReplaySlice &
+  WsStreamSlice &
+  OperatorActionsSlice &
+  ToastSlice
