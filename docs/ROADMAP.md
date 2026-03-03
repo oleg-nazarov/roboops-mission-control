@@ -245,13 +245,16 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Add keyboard shortcuts (search, replay play/pause)
 
 ### Task 028 - Testing baseline
-- [ ] Unit tests:
-  - [ ] parsers/normalizers
-  - [ ] status/incident reducers
-- [ ] Component tests:
-  - [ ] fleet filters
-  - [ ] replay scrubber sync
-- [ ] Optional smoke e2e path
+- [x] Unit tests:
+  - [x] parsers/normalizers
+  - [x] status/incident reducers
+- [x] Component tests:
+  - [x] fleet filters
+  - [x] replay scrubber sync
+- [x] Integration-level UI tests:
+  - [x] incidents filtering flow
+  - [x] replay keyboard shortcut behavior
+  - [x] toast auto-dismiss behavior
 
 ### Task 029 - Docs and architecture
 - [ ] Update `README.md` with:
