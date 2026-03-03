@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import type { RobotStatus } from '@roboops/contracts'
 
 const DEFAULT_REPLAY_API_URL = 'http://localhost:8091'
 
@@ -41,15 +42,24 @@ export type ReplayTimelineEvent = {
 export type IncidentReplayDataset = {
   incidentId: string
   runId: string
+  mode: 'DELIVERY' | 'WAREHOUSE'
   robotId: string
   startedAtTs: number
   endedAtTs: number
   metrics: ReplayMetricPoint[]
   markers: ReplayEventMarker[]
   timeline: ReplayTimelineEvent[]
+  trajectory: Array<{
+    ts: number
+    x: number
+    y: number
+    heading: number
+    status: RobotStatus
+  }>
 }
 
 type IncidentReplayLookupHints = {
+  runId?: string
   robotId?: string
   missionId?: string
   ts?: number
@@ -69,6 +79,9 @@ const fetchReplayByIncidentId = async (
   hints?: IncidentReplayLookupHints,
 ): Promise<IncidentReplayDataset | undefined> => {
   const search = new URLSearchParams()
+  if (hints?.runId) {
+    search.set('runId', hints.runId)
+  }
   if (hints?.robotId) {
     search.set('robotId', hints.robotId)
   }
@@ -107,7 +120,14 @@ export const useIncidentReplayQuery = (
   hints?: IncidentReplayLookupHints,
 ) =>
   useQuery({
-    queryKey: ['incident-replay', incidentId, hints?.robotId ?? null, hints?.missionId ?? null, hints?.ts ?? null],
+    queryKey: [
+      'incident-replay',
+      incidentId,
+      hints?.runId ?? null,
+      hints?.robotId ?? null,
+      hints?.missionId ?? null,
+      hints?.ts ?? null,
+    ],
     queryFn: () => fetchReplayByIncidentId(incidentId ?? '', hints),
     enabled: Boolean(incidentId),
     staleTime: 20_000,

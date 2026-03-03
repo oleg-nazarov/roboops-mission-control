@@ -213,13 +213,13 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Jump-to-event from markers
 
 ### Task 024 - Replay map + metrics sync
-- [ ] Replay map/floorplan mode
-- [ ] Render historical trajectory at selected time
-- [ ] Sync metric panels over time:
-  - [ ] battery
-  - [ ] speed
-  - [ ] localization confidence
-  - [ ] error count
+- [x] Replay map/floorplan mode
+- [x] Render historical trajectory at selected time
+- [x] Sync metric panels over time:
+  - [x] battery
+  - [x] speed
+  - [x] localization confidence
+  - [x] error count
 
 ## Phase 5 - Incident Report
 

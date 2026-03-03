@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { useIncidentReplayQuery } from '../queries/replay'
+import { ReplaySceneCanvas } from './replay/ReplaySceneCanvas'
 import { useAppStore, type ReplaySpeed } from '../state/appStore'
 
 const speedOptions: ReplaySpeed[] = [0.5, 1, 2]
@@ -14,10 +15,12 @@ const formatTs = (ts: number): string =>
 
 export function IncidentReplayPage() {
   const { incidentId } = useParams()
+  const wsRunId = useAppStore((state) => state.ws.runId)
   const replayIncidentHint = useAppStore((state) =>
     incidentId ? state.stream.recentIncidents.find((incident) => incident.incidentId === incidentId) : undefined,
   )
   const replayQuery = useIncidentReplayQuery(incidentId, {
+    runId: wsRunId ?? undefined,
     robotId: replayIncidentHint?.robotId,
     missionId: replayIncidentHint?.missionId,
     ts: replayIncidentHint?.ts,
@@ -130,10 +133,22 @@ export function IncidentReplayPage() {
           <div className="rounded-panel border border-border/60 bg-surface-elevated/55 p-4">
             <p className="text-sm text-muted">Run: {replayQuery.data.runId}</p>
             <p className="text-sm text-muted">Robot: {replayQuery.data.robotId}</p>
+            <p className="text-sm text-muted">Mode: {replayQuery.data.mode}</p>
             <p className="text-sm text-muted">
               Time: {formatTs(rangeMin)} - {formatTs(rangeMax)}
             </p>
+            <p className="mt-2 rounded-panel border border-border/50 bg-surface/50 px-2.5 py-1.5 text-xs text-muted">
+              Replay mode is locked to incident dataset. Header mode switch controls live stream mode
+              only.
+            </p>
           </div>
+
+          <ReplaySceneCanvas
+            cursorTs={clampedCursorTs}
+            mode={replayQuery.data.mode ?? 'DELIVERY'}
+            robotId={replayQuery.data.robotId}
+            trajectory={replayQuery.data.trajectory ?? []}
+          />
 
           <div className="rounded-panel border border-border/60 bg-surface-elevated/55 p-4">
             <label className="block">
@@ -187,13 +202,27 @@ export function IncidentReplayPage() {
           </div>
 
           <div className="rounded-panel border border-border/60 bg-surface-elevated/55 p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-muted">Active Metrics</p>
+            <p className="text-xs uppercase tracking-[0.14em] text-muted">Metrics Synced To Cursor</p>
             {activeMetric ? (
-              <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-muted md:grid-cols-4">
-                <p>Battery: {activeMetric.battery}%</p>
-                <p>Speed: {activeMetric.speed.toFixed(2)} m/s</p>
-                <p>Confidence: {activeMetric.localizationConfidence.toFixed(2)}</p>
-                <p>Errors: {activeMetric.errors}</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+                <div className="rounded-panel border border-border/50 bg-surface/60 p-2">
+                  <p className="text-xs uppercase tracking-[0.1em] text-muted">Battery</p>
+                  <p className="mt-1 text-sm text-muted">{activeMetric.battery}%</p>
+                </div>
+                <div className="rounded-panel border border-border/50 bg-surface/60 p-2">
+                  <p className="text-xs uppercase tracking-[0.1em] text-muted">Speed</p>
+                  <p className="mt-1 text-sm text-muted">{activeMetric.speed.toFixed(2)} m/s</p>
+                </div>
+                <div className="rounded-panel border border-border/50 bg-surface/60 p-2">
+                  <p className="text-xs uppercase tracking-[0.1em] text-muted">Confidence</p>
+                  <p className="mt-1 text-sm text-muted">
+                    {activeMetric.localizationConfidence.toFixed(2)}
+                  </p>
+                </div>
+                <div className="rounded-panel border border-border/50 bg-surface/60 p-2">
+                  <p className="text-xs uppercase tracking-[0.1em] text-muted">Error Count</p>
+                  <p className="mt-1 text-sm text-muted">{activeMetric.errors}</p>
+                </div>
               </div>
             ) : (
               <p className="mt-2 text-sm text-muted">No metric sample available.</p>

@@ -11,6 +11,7 @@ import {
   type Event as OpsEvent,
   type Incident as OpsIncident,
   type OpsMode,
+  type RobotStatus,
   type Telemetry,
 } from '@roboops/contracts'
 
@@ -36,6 +37,14 @@ type ReplayEventMarker = {
   label: string
 }
 
+type ReplayTrajectoryPoint = {
+  ts: number
+  x: number
+  y: number
+  heading: number
+  status: RobotStatus
+}
+
 type ReplayTimelineEvent = {
   ts: number
   level: OpsEvent['level']
@@ -48,12 +57,14 @@ type ReplayTimelineEvent = {
 type IncidentReplayDataset = {
   incidentId: string
   runId: string
+  mode: OpsMode
   robotId: string
   startedAtTs: number
   endedAtTs: number
   metrics: ReplayMetricPoint[]
   markers: ReplayEventMarker[]
   timeline: ReplayTimelineEvent[]
+  trajectory: ReplayTrajectoryPoint[]
 }
 
 type ReplayEventRef = {
@@ -65,6 +76,7 @@ type ReplayEventRef = {
   message: string
   level: 'WARN' | 'ERROR'
   eventId: string | null
+  mode: OpsMode | null
 }
 
 type ReplayIncidentRef = {
@@ -73,6 +85,7 @@ type ReplayIncidentRef = {
   robotId: string
   missionId: string | null
   incidentId: string
+  mode: OpsMode | null
 }
 
 type ReplayRunIndexEntry = {
@@ -94,6 +107,7 @@ type ReplayIndex = {
 }
 
 type ReplayLookupHints = {
+  runId?: string
   robotId?: string
   missionId?: string
   ts?: number
@@ -242,6 +256,9 @@ const toEventIdFromIncidentId = (incidentId: string): string | null => {
   return `EVT-${match[1]}`
 }
 
+const parseModeFromUnknown = (value: unknown): OpsMode | null =>
+  value === 'DELIVERY' || value === 'WAREHOUSE' ? value : null
+
 const parseRunFileIndex = async (input: {
   filePath: string
   runId: string
@@ -272,6 +289,7 @@ const parseRunFileIndex = async (input: {
     }
 
     if (parsed.incident) {
+      const incidentMode = parseModeFromUnknown(parsed.incident.meta.mode)
       incidents.add(parsed.incident.incidentId)
       incidentRefs.push({
         runId: input.runId,
@@ -279,6 +297,7 @@ const parseRunFileIndex = async (input: {
         robotId: parsed.incident.robotId,
         missionId: parsed.incident.missionId ?? null,
         incidentId: parsed.incident.incidentId,
+        mode: incidentMode,
       })
       continue
     }
@@ -304,6 +323,7 @@ const parseRunFileIndex = async (input: {
       message: parsed.event.message,
       level: parsed.event.level,
       eventId,
+      mode: parseModeFromUnknown(parsed.event.meta.mode),
     })
   }
 
@@ -389,7 +409,7 @@ const buildReplayIndex = async (
       incidentById.set(incidentRef.incidentId, incidentRef)
     }
     for (const eventRef of run.events) {
-      if (eventRef.eventId) {
+      if (eventRef.eventId && !eventById.has(eventRef.eventId)) {
         eventById.set(eventRef.eventId, eventRef)
       }
     }
@@ -411,6 +431,10 @@ const closestEventRefByHints = (index: ReplayIndex, hints: ReplayLookupHints): R
   let best: ReplayEventRef | null = null
   let bestDistance = Number.POSITIVE_INFINITY
   for (const run of index.runs) {
+    if (hints.runId && run.runId !== hints.runId) {
+      continue
+    }
+
     for (const eventRef of run.events) {
       if (eventRef.robotId !== hints.robotId) {
         continue
@@ -437,14 +461,39 @@ const resolveIncidentRef = (
   index: ReplayIndex,
   incidentId: string,
   hints: ReplayLookupHints,
-): { runId: string; ts: number; robotId: string; missionId: string | null } | null => {
+): { runId: string; ts: number; robotId: string; missionId: string | null; mode: OpsMode | null } | null => {
   const explicit = index.incidentById.get(incidentId)
   if (explicit) {
     return explicit
   }
 
+  const closest = closestEventRefByHints(index, hints)
+  if (closest) {
+    return {
+      runId: closest.runId,
+      ts: closest.ts,
+      robotId: closest.robotId,
+      missionId: closest.missionId,
+      mode: closest.mode,
+    }
+  }
+
   const mappedEventId = toEventIdFromIncidentId(incidentId)
   if (mappedEventId) {
+    if (hints.runId) {
+      const hintedRun = index.runById.get(hints.runId)
+      const hintedEvent = hintedRun?.events.find((eventRef) => eventRef.eventId === mappedEventId)
+      if (hintedEvent) {
+        return {
+          runId: hintedEvent.runId,
+          ts: hintedEvent.ts,
+          robotId: hintedEvent.robotId,
+          missionId: hintedEvent.missionId,
+          mode: hintedEvent.mode,
+        }
+      }
+    }
+
     const mappedEvent = index.eventById.get(mappedEventId)
     if (mappedEvent) {
       return {
@@ -452,21 +501,11 @@ const resolveIncidentRef = (
         ts: mappedEvent.ts,
         robotId: mappedEvent.robotId,
         missionId: mappedEvent.missionId,
+        mode: mappedEvent.mode,
       }
     }
   }
-
-  const closest = closestEventRefByHints(index, hints)
-  if (!closest) {
-    return null
-  }
-
-  return {
-    runId: closest.runId,
-    ts: closest.ts,
-    robotId: closest.robotId,
-    missionId: closest.missionId,
-  }
+  return null
 }
 
 const buildReplayForIncident = async (input: {
@@ -475,11 +514,13 @@ const buildReplayForIncident = async (input: {
   robotId: string
   missionId: string | null
   ts: number
+  incidentMode: OpsMode | null
 }): Promise<IncidentReplayDataset | null> => {
   const startedWindowTs = Math.max(input.run.startedAtTs, input.ts - REPLAY_WINDOW_BEFORE_MS)
   const endedWindowTs = Math.min(input.run.endedAtTs, input.ts + REPLAY_WINDOW_AFTER_MS)
   const telemetryByTs = new Map<number, Telemetry>()
   const timeline: ReplayTimelineEvent[] = []
+  const telemetryModeCounts: Partial<Record<OpsMode, number>> = {}
 
   const lineReader = createInterface({
     input: createReadStream(input.run.filePath, { encoding: 'utf-8' }),
@@ -494,6 +535,9 @@ const buildReplayForIncident = async (input: {
 
     if (parsed.telemetry && parsed.telemetry.robotId === input.robotId) {
       telemetryByTs.set(parsed.telemetry.ts, parsed.telemetry)
+      if (parsed.telemetry.mode) {
+        telemetryModeCounts[parsed.telemetry.mode] = (telemetryModeCounts[parsed.telemetry.mode] ?? 0) + 1
+      }
       continue
     }
 
@@ -529,6 +573,12 @@ const buildReplayForIncident = async (input: {
     return null
   }
 
+  const replayMode: OpsMode =
+    input.incidentMode ??
+    ((telemetryModeCounts.DELIVERY ?? 0) >= (telemetryModeCounts.WAREHOUSE ?? 0)
+      ? 'DELIVERY'
+      : 'WAREHOUSE')
+
   let markerCursor = 0
   let errors = 0
   const metrics: ReplayMetricPoint[] = []
@@ -552,12 +602,20 @@ const buildReplayForIncident = async (input: {
   return {
     incidentId: input.incidentId,
     runId: input.run.runId,
+    mode: replayMode,
     robotId: input.robotId,
     startedAtTs: sortedTelemetry[0].ts,
     endedAtTs: sortedTelemetry[sortedTelemetry.length - 1].ts,
     metrics,
     markers,
     timeline: sortedTimeline,
+    trajectory: sortedTelemetry.map((telemetry) => ({
+      ts: telemetry.ts,
+      x: telemetry.pose.x,
+      y: telemetry.pose.y,
+      heading: telemetry.pose.heading,
+      status: telemetry.status ?? 'OFFLINE',
+    })),
   }
 }
 
@@ -644,6 +702,7 @@ export const startReplayApiServer = (options: ReplayApiOptions): { close: (callb
 
     const incidentId = decodeURIComponent(incidentMatch[1])
     const hints: ReplayLookupHints = {
+      runId: url.searchParams.get('runId') ?? undefined,
       robotId: url.searchParams.get('robotId') ?? undefined,
       missionId: url.searchParams.get('missionId') ?? undefined,
       ts:
@@ -679,6 +738,7 @@ export const startReplayApiServer = (options: ReplayApiOptions): { close: (callb
         robotId: ref.robotId,
         missionId: ref.missionId,
         ts: ref.ts,
+        incidentMode: ref.mode,
       })
       if (!dataset) {
         okJson(response, 404, {
