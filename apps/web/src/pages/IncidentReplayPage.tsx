@@ -1,10 +1,18 @@
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useIncidentReplayQuery } from '../queries/replay'
 import { ReplaySceneCanvas } from './replay/ReplaySceneCanvas'
 import { useAppStore, type ReplaySpeed } from '../state/appStore'
 
 const speedOptions: ReplaySpeed[] = [0.5, 1, 2]
+const METRIC_OFFSET_MS = 10_000
+const MIN_KEY_EVENTS = 5
+const MAX_KEY_EVENTS = 10
+const EVENT_LEVEL_WEIGHT: Record<'INFO' | 'WARN' | 'ERROR', number> = {
+  INFO: 1,
+  WARN: 2,
+  ERROR: 3,
+}
 
 const formatTs = (ts: number): string =>
   new Date(ts).toLocaleTimeString('en-US', {
@@ -12,6 +20,106 @@ const formatTs = (ts: number): string =>
     minute: '2-digit',
     second: '2-digit',
   })
+
+const formatIsoTs = (ts: number): string => new Date(ts).toISOString()
+
+const findClosestMetric = (
+  metrics: Array<{
+    ts: number
+    battery: number
+    speed: number
+    localizationConfidence: number
+    errors: number
+  }>,
+  targetTs: number,
+):
+  | {
+      ts: number
+      battery: number
+      speed: number
+      localizationConfidence: number
+      errors: number
+    }
+  | null => {
+  if (metrics.length === 0) {
+    return null
+  }
+
+  let best = metrics[0]
+  let bestDistance = Math.abs(metrics[0].ts - targetTs)
+  for (let index = 1; index < metrics.length; index += 1) {
+    const distance = Math.abs(metrics[index].ts - targetTs)
+    if (distance < bestDistance) {
+      best = metrics[index]
+      bestDistance = distance
+    }
+  }
+
+  return best
+}
+
+const selectKeyEvents = (
+  timeline: Array<{
+    ts: number
+    level: 'INFO' | 'WARN' | 'ERROR'
+    eventType: string
+    message: string
+    robotId: string
+    missionId: string | null
+  }>,
+  anchorTs: number,
+): Array<{
+  ts: number
+  level: 'INFO' | 'WARN' | 'ERROR'
+  eventType: string
+  message: string
+  robotId: string
+  missionId: string | null
+}> => {
+  if (timeline.length === 0) {
+    return []
+  }
+
+  const asc = [...timeline].sort((left, right) => left.ts - right.ts)
+  const scored = [...asc].sort((left, right) => {
+    const levelDelta = EVENT_LEVEL_WEIGHT[right.level] - EVENT_LEVEL_WEIGHT[left.level]
+    if (levelDelta !== 0) {
+      return levelDelta
+    }
+
+    return Math.abs(left.ts - anchorTs) - Math.abs(right.ts - anchorTs)
+  })
+
+  const selected: typeof asc = []
+  const seen = new Set<string>()
+  for (const eventItem of scored) {
+    const key = `${eventItem.ts}:${eventItem.level}:${eventItem.eventType}:${eventItem.message}`
+    if (seen.has(key)) {
+      continue
+    }
+    selected.push(eventItem)
+    seen.add(key)
+    if (selected.length >= MAX_KEY_EVENTS) {
+      break
+    }
+  }
+
+  if (selected.length < MIN_KEY_EVENTS) {
+    for (const eventItem of asc) {
+      const key = `${eventItem.ts}:${eventItem.level}:${eventItem.eventType}:${eventItem.message}`
+      if (seen.has(key)) {
+        continue
+      }
+      selected.push(eventItem)
+      seen.add(key)
+      if (selected.length >= MIN_KEY_EVENTS) {
+        break
+      }
+    }
+  }
+
+  return selected.sort((left, right) => left.ts - right.ts).slice(0, MAX_KEY_EVENTS)
+}
 
 export function IncidentReplayPage() {
   const { incidentId } = useParams()
@@ -33,6 +141,7 @@ export function IncidentReplayPage() {
   const setReplaySpeed = useAppStore((state) => state.setReplaySpeed)
   const advanceReplayCursor = useAppStore((state) => state.advanceReplayCursor)
   const resetReplay = useAppStore((state) => state.resetReplay)
+  const [lastReportGeneratedAt, setLastReportGeneratedAt] = useState<number | null>(null)
 
   useEffect(() => {
     resetReplay(0)
@@ -102,10 +211,103 @@ export function IncidentReplayPage() {
       .slice(0, 24)
   }, [replayQuery.data?.timeline])
 
+  const incidentAnchorTs = useMemo(() => {
+    if (replayIncidentHint?.ts) {
+      return replayIncidentHint.ts
+    }
+
+    const firstMarkerTs = replayQuery.data?.markers?.[0]?.ts
+    if (firstMarkerTs) {
+      return firstMarkerTs
+    }
+
+    const firstPriorityEventTs = replayQuery.data?.timeline?.find(
+      (eventItem) => eventItem.level === 'WARN' || eventItem.level === 'ERROR',
+    )?.ts
+    if (firstPriorityEventTs) {
+      return firstPriorityEventTs
+    }
+
+    if (rangeMin > 0 && rangeMax > 0) {
+      return Math.round((rangeMin + rangeMax) / 2)
+    }
+
+    return clampedCursorTs
+  }, [clampedCursorTs, rangeMax, rangeMin, replayIncidentHint, replayQuery.data])
+
   const jumpToTs = (ts: number): void => {
     setReplayPlaying(false)
     setReplayCursorTs(ts)
   }
+
+  const generateIncidentReport = useCallback(() => {
+    if (!replayQuery.data || !incidentId) {
+      return
+    }
+
+    const dataset = replayQuery.data
+    const metrics = dataset.metrics ?? []
+    const beforeMetric = findClosestMetric(metrics, incidentAnchorTs - METRIC_OFFSET_MS)
+    const duringMetric = findClosestMetric(metrics, incidentAnchorTs)
+    const afterMetric = findClosestMetric(metrics, incidentAnchorTs + METRIC_OFFSET_MS)
+    const keyEvents = selectKeyEvents(dataset.timeline ?? [], incidentAnchorTs)
+    const primaryMarker = (dataset.markers ?? [])
+      .slice()
+      .sort((left, right) => Math.abs(left.ts - incidentAnchorTs) - Math.abs(right.ts - incidentAnchorTs))[0]
+
+    const summary = primaryMarker
+      ? `Incident ${incidentId} on robot ${dataset.robotId} in ${dataset.mode} mode. Primary signal: ${primaryMarker.label}.`
+      : `Incident ${incidentId} on robot ${dataset.robotId} in ${dataset.mode} mode. Replay generated without explicit marker labels.`
+
+    const replayDeepLink = `${window.location.origin}/incidents/${encodeURIComponent(incidentId)}/replay?cursorTs=${incidentAnchorTs}`
+
+    const report = {
+      reportVersion: '1.0',
+      generatedAtTs: Date.now(),
+      generatedAtIso: formatIsoTs(Date.now()),
+      incidentId,
+      runId: dataset.runId,
+      robotId: dataset.robotId,
+      mode: dataset.mode,
+      summary,
+      replay: {
+        deepLink: replayDeepLink,
+        anchorTs: incidentAnchorTs,
+        anchorIso: formatIsoTs(incidentAnchorTs),
+        window: {
+          startedAtTs: dataset.startedAtTs,
+          startedAtIso: formatIsoTs(dataset.startedAtTs),
+          endedAtTs: dataset.endedAtTs,
+          endedAtIso: formatIsoTs(dataset.endedAtTs),
+        },
+      },
+      metrics: {
+        before: beforeMetric,
+        during: duringMetric,
+        after: afterMetric,
+      },
+      timeline: keyEvents.map((eventItem) => ({
+        ts: eventItem.ts,
+        iso: formatIsoTs(eventItem.ts),
+        level: eventItem.level,
+        eventType: eventItem.eventType,
+        message: eventItem.message,
+        robotId: eventItem.robotId,
+        missionId: eventItem.missionId,
+      })),
+    }
+
+    const fileName = `${incidentId}-report-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = fileName
+    link.click()
+    URL.revokeObjectURL(objectUrl)
+
+    setLastReportGeneratedAt(Date.now())
+  }, [incidentAnchorTs, incidentId, replayQuery.data])
 
   return (
     <section className="panel animate-shell-in p-5 [animation-delay:80ms]">
@@ -141,6 +343,20 @@ export function IncidentReplayPage() {
               Replay mode is locked to incident dataset. Header mode switch controls live stream mode
               only.
             </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-accent/45"
+                onClick={generateIncidentReport}
+                type="button"
+              >
+                Generate Report JSON
+              </button>
+              {lastReportGeneratedAt ? (
+                <span className="text-xs text-muted">
+                  Last generated: {formatTs(lastReportGeneratedAt)}
+                </span>
+              ) : null}
+            </div>
           </div>
 
           <ReplaySceneCanvas

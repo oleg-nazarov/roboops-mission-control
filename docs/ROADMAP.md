@@ -224,13 +224,13 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 ## Phase 5 - Incident Report
 
 ### Task 025 - Incident report generator (JSON)
-- [ ] Add `Generate report` on incident detail/replay
-- [ ] Include:
-  - [ ] summary
-  - [ ] timeline of 5-10 key events
-  - [ ] metrics before/during/after
-  - [ ] replay deep link with timestamp
-- [ ] Export `.json`
+- [x] Add `Generate report` on incident detail/replay
+- [x] Include:
+  - [x] summary
+  - [x] timeline of 5-10 key events
+  - [x] metrics before/during/after
+  - [x] replay deep link with timestamp
+- [x] Export `.json`
 
 ### Task 026 - Incident report export (Markdown)
 - [ ] Add markdown report template
