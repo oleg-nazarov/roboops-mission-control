@@ -258,13 +258,13 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 
 ### Task 029 - Docs and architecture
 - [ ] Update `README.md` with:
-  - [ ] problem statement
+  - [x] problem statement
   - [ ] screenshots/GIF
-  - [ ] run instructions (`web` + `sim`)
-  - [ ] data schemas
-  - [ ] architecture diagram
-  - [ ] roadmap/next steps
-- [ ] Add `docs/architecture.md` + diagram
+  - [x] run instructions (`web` + `sim`)
+  - [x] data schemas
+  - [x] architecture diagram
+  - [x] roadmap/next steps
+- [x] Add `docs/architecture.md` + diagram
 
 ### Task 030 - Demo readiness
 - [ ] Prepare 2-minute demo script
