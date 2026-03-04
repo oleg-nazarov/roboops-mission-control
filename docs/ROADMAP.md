@@ -267,9 +267,9 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Add `docs/architecture.md` + diagram
 
 ### Task 030 - Demo readiness
-- [ ] Prepare 2-minute demo script
+- [x] Prepare 2-minute demo script
 - [ ] Record demo video
-- [ ] Verify reproducible one-command local run
+- [x] Verify reproducible one-command local run
 
 ### Task 031 - Deployment (recommended)
 - [ ] Deploy frontend (Vercel/Netlify)

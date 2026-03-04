@@ -54,6 +54,24 @@ Prerequisites:
 - Node.js 20+.
 - npm 10+.
 
+### One-Command Start (Recommended)
+
+From repository root:
+
+```bash
+npm run dev
+```
+
+This starts both:
+- simulator + WS + replay API
+- frontend on `http://127.0.0.1:5173`
+
+Optional fast start (skip dependency checks):
+
+```bash
+npm run dev:skip-install
+```
+
 1. Start simulator and replay API:
 
 ```bash
@@ -90,6 +108,11 @@ Open `http://127.0.0.1:5173`.
 - `npm run start`
 - `npm run generate`
 - `npm run build`
+
+Root:
+- `npm run dev`
+- `npm run dev:skip-install`
+- `npm run install:all`
 
 ## Data Schemas (Core)
 
@@ -188,6 +211,10 @@ flowchart LR
 ## Next Steps
 
 - Add smoke Playwright tests for critical user flows.
-- Add a reproducible one-command local run script.
-- Record a 2-minute demo walkthrough.
+- Record and attach a 2-minute demo walkthrough.
 - Deploy web and simulator with production WS/replay URLs.
+
+## Demo Assets
+
+- Script: `docs/demo-script.md`
+- Recording guide: `docs/demo-video-recording.md`

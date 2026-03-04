@@ -1,0 +1,14 @@
+{
+  "name": "roboops-mission-control",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-all.mjs",
+    "dev:skip-install": "node scripts/dev-all.mjs --skip-install",
+    "install:all": "npm --prefix packages/contracts install && npm --prefix apps/sim install && npm --prefix apps/web install",
+    "test": "npm --prefix apps/web run test",
+    "lint": "npm --prefix apps/web run lint",
+    "build": "npm --prefix apps/web run build && npm --prefix apps/sim run build"
+  }
+}
