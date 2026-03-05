@@ -1,10 +1,9 @@
 import type { EventLevel, SensorHealth } from '@roboops/contracts'
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CartesianGrid,
   Line,
   LineChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -21,6 +20,14 @@ type ChartPoint = {
   cpu: number
   memory: number
 }
+
+const EMPTY_TELEMETRY_HISTORY: Array<{
+  ts: number
+  speed: number
+  battery: number
+  localizationConfidence: number
+  temp: number
+}> = []
 
 const chartStroke = {
   speed: '#5da2f6',
@@ -83,6 +90,11 @@ type TelemetryChartCardProps = {
 }
 
 function TelemetryChartCard({ title, data, dataKey, color, unit, domain }: TelemetryChartCardProps) {
+  const chartContainerRef = useRef<HTMLDivElement | null>(null)
+  const [chartSize, setChartSize] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 160,
+  })
   const yAxisWidth = unit ? 78 : 58
   const formatAxisValue = (value: number): string => {
     const normalized = Math.abs(value) >= 10 ? value.toFixed(1) : value.toFixed(2)
@@ -90,12 +102,52 @@ function TelemetryChartCard({ title, data, dataKey, color, unit, domain }: Telem
     return `${trimmed}${unit ?? ''}`
   }
 
+  useEffect(() => {
+    const container = chartContainerRef.current
+    if (!container) {
+      return
+    }
+
+    const updateSize = (): void => {
+      const rect = container.getBoundingClientRect()
+      const width = Math.max(0, Math.floor(rect.width))
+      const height = Math.max(120, Math.floor(rect.height))
+
+      setChartSize((prev) =>
+        prev.width === width && prev.height === height ? prev : { width, height },
+      )
+    }
+
+    updateSize()
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateSize)
+      return () => {
+        window.removeEventListener('resize', updateSize)
+      }
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateSize()
+    })
+    observer.observe(container)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [])
+
   return (
     <article className="rounded-panel border border-border/60 bg-surface-elevated/55 p-3">
       <p className="text-xs uppercase tracking-[0.12em] text-muted">{title}</p>
-      <div className="mt-3 h-40">
-        <ResponsiveContainer height="100%" width="100%">
-          <LineChart data={data} margin={{ top: 10, right: 10, left: 4, bottom: 0 }}>
+      <div className="mt-3 h-40 min-w-0" ref={chartContainerRef}>
+        {chartSize.width > 0 ? (
+          <LineChart
+            data={data}
+            height={chartSize.height}
+            margin={{ top: 10, right: 10, left: 4, bottom: 0 }}
+            width={chartSize.width}
+          >
             <CartesianGrid stroke="hsl(var(--ui-color-border) / 0.35)" strokeDasharray="3 4" />
             <XAxis
               dataKey="ts"
@@ -131,7 +183,7 @@ function TelemetryChartCard({ title, data, dataKey, color, unit, domain }: Telem
               type="monotone"
             />
           </LineChart>
-        </ResponsiveContainer>
+        ) : null}
       </div>
     </article>
   )
@@ -147,7 +199,7 @@ export function RobotDetailPage() {
     robotId ? state.stream.telemetryByRobot[robotId] : undefined,
   )
   const telemetryHistory = useAppStore((state) =>
-    robotId ? state.stream.telemetryHistoryByRobot[robotId] ?? [] : [],
+    robotId ? state.stream.telemetryHistoryByRobot[robotId] ?? EMPTY_TELEMETRY_HISTORY : EMPTY_TELEMETRY_HISTORY,
   )
   const recentEvents = useAppStore((state) => state.stream.recentEvents)
   const operatorActionsByRobot = useAppStore((state) => state.operatorActions.byRobot)

@@ -14,14 +14,27 @@ type NavItem = {
   path: string
   badge: string
   exact: boolean
+  activeWhen?: (pathname: string) => boolean
 }
 
 const navItems: NavItem[] = [
   { label: 'Fleet Overview', path: '/fleet', badge: '01', exact: true },
   { label: 'Live Map', path: '/map', badge: '02', exact: true },
   { label: 'Incidents', path: '/incidents', badge: '03', exact: true },
-  { label: 'Replay', path: '/incidents/INC-000001/replay', badge: '04', exact: true },
-  { label: 'Robot Detail', path: '/robots/RBT-001', badge: '05', exact: false },
+  {
+    label: 'Replay',
+    path: '/incidents/INC-000001/replay',
+    badge: '04',
+    exact: true,
+    activeWhen: (pathname) => pathname.startsWith('/incidents/') && pathname.endsWith('/replay'),
+  },
+  {
+    label: 'Robot Detail',
+    path: '/robots/RBT-001',
+    badge: '05',
+    exact: false,
+    activeWhen: (pathname) => pathname.startsWith('/robots/'),
+  },
 ]
 
 const routeTitles: Record<string, string> = {
@@ -140,12 +153,17 @@ function App() {
               <NavLink
                 key={item.path}
                 className={({ isActive }) =>
-                  [
+                  (() => {
+                    const resolvedIsActive = item.activeWhen
+                      ? item.activeWhen(location.pathname)
+                      : isActive
+                    return [
                     'group flex w-full items-center justify-between rounded-panel border px-3 py-2.5 text-left transition',
-                    isActive
+                    resolvedIsActive
                       ? 'border-accent/55 bg-accent-soft/45'
                       : 'border-border/50 bg-surface-elevated/50 hover:border-accent/40 hover:bg-surface-elevated/80',
-                  ].join(' ')
+                    ].join(' ')
+                  })()
                 }
                 end={item.exact}
                 to={item.path}

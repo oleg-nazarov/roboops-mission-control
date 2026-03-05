@@ -22,6 +22,23 @@ const decodeServerPayload = (raw: unknown): string | null => {
   return null
 }
 
+const disposeSocket = (socket: WebSocket): void => {
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.close(1000, 'client cleanup')
+    return
+  }
+
+  if (socket.readyState === WebSocket.CONNECTING) {
+    socket.addEventListener(
+      'open',
+      () => {
+        socket.close(1000, 'client cleanup')
+      },
+      { once: true },
+    )
+  }
+}
+
 export const useOpsWebSocket = () => {
   const wsUrl = (() => {
     if (typeof import.meta.env.VITE_SIM_WS_URL === 'string' && import.meta.env.VITE_SIM_WS_URL.trim()) {
@@ -217,7 +234,9 @@ export const useOpsWebSocket = () => {
       queuedMessagesRef.current = []
       const socket = socketRef.current
       socketRef.current = null
-      socket?.close()
+      if (socket) {
+        disposeSocket(socket)
+      }
       setWsStatus('idle')
     }
   }, [
