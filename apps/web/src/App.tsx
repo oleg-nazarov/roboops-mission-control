@@ -51,6 +51,11 @@ const connectionStatusClasses: Record<WsConnectionStatus, string> = {
   error: 'bg-status-fault',
 }
 
+const githubRepoUrl =
+  (typeof import.meta.env.VITE_GITHUB_REPO_URL === 'string' &&
+    import.meta.env.VITE_GITHUB_REPO_URL.trim()) ||
+  'https://github.com/oleg-nazarov/roboops-mission-control'
+
 function App() {
   const { wsUrl, sendSetModeCommand } = useOpsWebSocket()
   const mode = useAppStore((state) => state.mode)
@@ -137,6 +142,24 @@ function App() {
                 Warehouse
               </button>
             </div>
+
+            <a
+              className="inline-flex items-center gap-1.5 rounded-pill border border-border/70 bg-surface-elevated/80 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-text/90 transition hover:border-accent/55 hover:bg-surface-elevated hover:text-text"
+              href={githubRepoUrl}
+              rel="noreferrer"
+              target="_blank"
+              title={githubRepoUrl}
+            >
+              <svg
+                aria-hidden="true"
+                className="h-3.5 w-3.5 shrink-0"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M12 0.3a12 12 0 0 0-3.8 23.4c0.6 0.1 0.8-0.2 0.8-0.6v-2.2c-3.3 0.7-4-1.4-4-1.4-0.5-1.4-1.3-1.8-1.3-1.8-1.1-0.8 0.1-0.8 0.1-0.8 1.2 0.1 1.9 1.3 1.9 1.3 1.1 1.8 2.8 1.3 3.5 1a2.6 2.6 0 0 1 0.8-1.7c-2.7-0.3-5.6-1.3-5.6-6a4.7 4.7 0 0 1 1.3-3.3 4.3 4.3 0 0 1 0.1-3.3s1-0.3 3.4 1.3a11.8 11.8 0 0 1 6.2 0c2.4-1.6 3.4-1.3 3.4-1.3a4.3 4.3 0 0 1 0.1 3.3 4.7 4.7 0 0 1 1.3 3.3c0 4.7-2.9 5.7-5.6 6a2.9 2.9 0 0 1 0.8 2.2v3.2c0 0.3 0.2 0.7 0.8 0.6A12 12 0 0 0 12 0.3" />
+              </svg>
+              <span>GitHub Repo</span>
+            </a>
           </div>
         </div>
       </header>
