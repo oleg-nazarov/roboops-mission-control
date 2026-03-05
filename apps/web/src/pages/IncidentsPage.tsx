@@ -159,7 +159,16 @@ export function IncidentsPage() {
       </div>
 
       <div className="mt-5 overflow-x-auto rounded-panel border border-border/60 bg-surface-elevated/50">
-        <table className="min-w-[1020px] w-full text-sm">
+        <table className="min-w-[1020px] w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[130px]" />
+            <col className="w-[250px]" />
+            <col className="w-[120px]" />
+            <col className="w-[170px]" />
+            <col className="w-[110px]" />
+            <col className="w-[120px]" />
+            <col className="w-[120px]" />
+          </colgroup>
           <thead className="border-b border-border/70 bg-surface/80">
             <tr>
               <th className="px-3 py-2.5 text-left font-semibold text-muted">Incident</th>
@@ -186,7 +195,7 @@ export function IncidentsPage() {
                   <td className="px-3 py-2.5">
                     <span
                       className={[
-                        'inline-flex rounded-pill px-2.5 py-1 text-xs font-semibold',
+                        'inline-flex min-w-[92px] justify-center whitespace-nowrap rounded-pill px-2.5 py-1 text-xs font-semibold',
                         severityBadgeClassName[incident.severity],
                       ].join(' ')}
                     >
