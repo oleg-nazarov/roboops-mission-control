@@ -272,25 +272,22 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
 - [x] Verify reproducible one-command local run
 
 ### Task 031 - Deployment (recommended)
-- [ ] Deploy on Render (single provider strategy)
+- [x] Deploy on Render (single provider strategy)
   - [x] Choose deployment shape:
     - [x] single Render Web Service (Node serves frontend static assets + WS + replay API)
-    - [ ] fallback: two Render services (`web` static + `sim` web service) if single-service proves unstable
-  - [ ] Connect GitHub repository and set deploy branch to `main`
+  - [x] Connect GitHub repository and set deploy branch to `main`
   - [x] Configure Render Auto-Deploy mode:
     - [x] `After CI Checks Pass` (preferred)
-    - [ ] fallback: `On Commit` if CI integration is unavailable
   - [x] Configure Render build/start commands and runtime settings
   - [x] Add production env vars for WS/replay endpoints
-  - [ ] Verify public URL accessibility and reconnect behavior after cold start
+  - [x] Verify public URL accessibility and reconnect behavior after cold start
   - [x] Update frontend runtime config to use Render production URLs
   - [x] Add GitHub Actions CI pipeline:
     - [x] run `apps/web` tests
     - [x] run `apps/web` lint
     - [x] run `apps/web` build
     - [x] run `apps/sim` build
-  - [ ] Add branch protection for `main` requiring CI checks before merge
-  - [ ] (Optional) add Render deploy hook workflow for manual controlled deploys
+  - [x] Add branch protection for `main` requiring CI checks before merge
 
 ## Suggested Execution Order (review/commit cycle)
 1. Task 001-006 (bootstrap + contracts)
