@@ -22,6 +22,14 @@ type ChartPoint = {
   memory: number
 }
 
+const EMPTY_TELEMETRY_HISTORY: Array<{
+  ts: number
+  speed: number
+  battery: number
+  localizationConfidence: number
+  temp: number
+}> = []
+
 const chartStroke = {
   speed: '#5da2f6',
   battery: '#5bbf79',
@@ -147,7 +155,7 @@ export function RobotDetailPage() {
     robotId ? state.stream.telemetryByRobot[robotId] : undefined,
   )
   const telemetryHistory = useAppStore((state) =>
-    robotId ? state.stream.telemetryHistoryByRobot[robotId] ?? [] : [],
+    robotId ? state.stream.telemetryHistoryByRobot[robotId] ?? EMPTY_TELEMETRY_HISTORY : EMPTY_TELEMETRY_HISTORY,
   )
   const recentEvents = useAppStore((state) => state.stream.recentEvents)
   const operatorActionsByRobot = useAppStore((state) => state.operatorActions.byRobot)
