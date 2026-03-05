@@ -1,12 +1,23 @@
 import { useQuery } from '@tanstack/react-query'
 import type { RobotStatus } from '@roboops/contracts'
 
-const DEFAULT_REPLAY_API_URL = 'http://localhost:8091'
+const replayApiBaseUrl = (() => {
+  if (typeof import.meta.env.VITE_REPLAY_API_URL === 'string' && import.meta.env.VITE_REPLAY_API_URL.trim()) {
+    return import.meta.env.VITE_REPLAY_API_URL.trim()
+  }
 
-const replayApiBaseUrl =
-  (typeof import.meta.env.VITE_REPLAY_API_URL === 'string' &&
-    import.meta.env.VITE_REPLAY_API_URL.trim()) ||
-  DEFAULT_REPLAY_API_URL
+  if (typeof window !== 'undefined') {
+    const isLocalHost =
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    if (isLocalHost) {
+      return 'http://localhost:8090'
+    }
+
+    return window.location.origin
+  }
+
+  return 'http://localhost:8090'
+})()
 
 export type ReplayRunSummary = {
   runId: string

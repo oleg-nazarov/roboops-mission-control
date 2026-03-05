@@ -16,8 +16,8 @@ This guide is for producing the final 2-minute demo video.
   - `npm run dev`
 - Confirm endpoints:
   - Web: `http://127.0.0.1:5173`
-  - WS: `ws://localhost:8090`
-  - Replay API: `http://localhost:8091`
+  - WS: `ws://localhost:8090/ws`
+  - Replay API: `http://localhost:8090/replay/runs`
 - Keep one stable simulator session for the entire recording.
 - Close unrelated apps and disable desktop notifications.
 

@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: roboops-mission-control
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm run install:all && npm --prefix apps/web run build
+    startCommand: npm --prefix apps/sim run start
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SIM_MODE
+        value: DELIVERY
+      - key: ROBOT_COUNT
+        value: "12"
+      - key: REPLAY_SCAN_MAX_FILES
+        value: "8"
+      - key: REPLAY_MAX_RUN_FILE_SIZE_MB
+        value: "24"

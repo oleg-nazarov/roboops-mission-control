@@ -63,6 +63,11 @@ Server emits ordered messages:
 - `incident`: incident entities.
 - `heartbeat`: server health, mode, and run metadata.
 
+Unified service routes (Render deployment target):
+- WebSocket: `/ws`
+- Replay API: `/replay/runs`, `/replay/incidents/:incidentId`
+- Health: `/health`
+
 Client behavior:
 - validates every payload via shared schema,
 - stores `lastStreamSeq` and supports resume flow after reconnect,

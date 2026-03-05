@@ -3,7 +3,6 @@ import type { OpsMode as ContractOpsMode, WsClientMessage } from '@roboops/contr
 import { wsClientMessageSchema, wsServerMessageSchema } from '@roboops/contracts'
 import { useAppStore, type OpsMode } from '../state/appStore'
 
-const DEFAULT_WS_URL = 'ws://localhost:8090'
 const RECONNECT_DELAY_MS = 1500
 const CLIENT_PING_INTERVAL_MS = 5000
 
@@ -24,9 +23,24 @@ const decodeServerPayload = (raw: unknown): string | null => {
 }
 
 export const useOpsWebSocket = () => {
-  const wsUrl =
-    (typeof import.meta.env.VITE_SIM_WS_URL === 'string' && import.meta.env.VITE_SIM_WS_URL.trim()) ||
-    DEFAULT_WS_URL
+  const wsUrl = (() => {
+    if (typeof import.meta.env.VITE_SIM_WS_URL === 'string' && import.meta.env.VITE_SIM_WS_URL.trim()) {
+      return import.meta.env.VITE_SIM_WS_URL.trim()
+    }
+
+    if (typeof window !== 'undefined') {
+      const isLocalHost =
+        window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      if (isLocalHost) {
+        return 'ws://localhost:8090'
+      }
+
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      return `${wsProtocol}//${window.location.host}/ws`
+    }
+
+    return 'ws://localhost:8090'
+  })()
 
   const setWsStatus = useAppStore((state) => state.setWsStatus)
   const setWsUrl = useAppStore((state) => state.setWsUrl)

@@ -121,11 +121,14 @@ type ParsedLine = {
   incident: OpsIncident | null
 }
 
-type ReplayApiOptions = {
-  port: number
+type ReplayApiRuntimeOptions = {
   runsDir: string
   scanMaxFiles: number
   maxRunFileSizeBytes: number
+}
+
+type ReplayApiOptions = ReplayApiRuntimeOptions & {
+  port: number
 }
 
 const isWarnOrErrorLevel = (level: OpsEvent['level']): level is 'WARN' | 'ERROR' =>
@@ -619,7 +622,9 @@ const buildReplayForIncident = async (input: {
   }
 }
 
-export const startReplayApiServer = (options: ReplayApiOptions): { close: (callback: () => void) => void } => {
+export const createReplayApiRequestHandler = (
+  options: ReplayApiRuntimeOptions,
+): ((request: IncomingMessage, response: ServerResponse) => Promise<boolean>) => {
   let cache:
     | {
         createdAtTs: number
@@ -652,24 +657,31 @@ export const startReplayApiServer = (options: ReplayApiOptions): { close: (callb
     return index
   }
 
-  const server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+  return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
+    const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+    const isReplayRunsPath = url.pathname === '/replay/runs'
+    const isReplayIncidentPath = /^\/replay\/incidents\/([^/]+)$/.test(url.pathname)
+
+    if (!isReplayRunsPath && !isReplayIncidentPath) {
+      return false
+    }
+
     response.setHeader('Access-Control-Allow-Origin', '*')
     response.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type')
     if (request.method === 'OPTIONS') {
       response.statusCode = 204
       response.end()
-      return
+      return true
     }
 
     if (request.method !== 'GET') {
       okJson(response, 405, {
         error: 'Method not allowed',
       })
-      return
+      return true
     }
 
-    const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
     if (url.pathname === '/replay/runs') {
       try {
         const index = await getIndex()
@@ -689,7 +701,7 @@ export const startReplayApiServer = (options: ReplayApiOptions): { close: (callb
           details: error instanceof Error ? error.message : 'unknown',
         })
       }
-      return
+      return true
     }
 
     const incidentMatch = /^\/replay\/incidents\/([^/]+)$/.exec(url.pathname)
@@ -697,7 +709,7 @@ export const startReplayApiServer = (options: ReplayApiOptions): { close: (callb
       okJson(response, 404, {
         error: 'Not found',
       })
-      return
+      return true
     }
 
     const incidentId = decodeURIComponent(incidentMatch[1])
@@ -719,7 +731,7 @@ export const startReplayApiServer = (options: ReplayApiOptions): { close: (callb
           error: 'Replay dataset not found for incident',
           incidentId,
         })
-        return
+        return true
       }
 
       const run = index.runById.get(ref.runId)
@@ -729,7 +741,7 @@ export const startReplayApiServer = (options: ReplayApiOptions): { close: (callb
           incidentId,
           runId: ref.runId,
         })
-        return
+        return true
       }
 
       const dataset = await buildReplayForIncident({
@@ -746,7 +758,7 @@ export const startReplayApiServer = (options: ReplayApiOptions): { close: (callb
           incidentId,
           runId: run.runId,
         })
-        return
+        return true
       }
 
       okJson(response, 200, dataset)
@@ -756,6 +768,21 @@ export const startReplayApiServer = (options: ReplayApiOptions): { close: (callb
         details: error instanceof Error ? error.message : 'unknown',
       })
     }
+    return true
+  }
+}
+
+export const startReplayApiServer = (options: ReplayApiOptions): { close: (callback: () => void) => void } => {
+  const replayHandler = createReplayApiRequestHandler(options)
+  const server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+    const handled = await replayHandler(request, response)
+    if (handled) {
+      return
+    }
+
+    okJson(response, 404, {
+      error: 'Not found',
+    })
   })
 
   server.listen(options.port, () => {

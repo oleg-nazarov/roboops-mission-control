@@ -91,7 +91,7 @@ const launchDevServers = async () => {
 
   process.stdout.write('[setup] Starting simulator and web app...\n')
   process.stdout.write('[setup] Web: http://127.0.0.1:5173\n')
-  process.stdout.write('[setup] WS: ws://localhost:8090 | Replay API: http://localhost:8091\n')
+  process.stdout.write('[setup] WS: ws://localhost:8090/ws | Replay API: http://localhost:8090/replay/runs\n')
   process.stdout.write('[setup] Press Ctrl+C to stop all services.\n')
   if (checkMode) {
     process.stdout.write('[setup] Check mode enabled: services will be auto-stopped after startup verification.\n')

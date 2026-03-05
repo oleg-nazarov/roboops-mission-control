@@ -40,10 +40,15 @@ export type RunLogger = {
   close: (onClosed: () => void) => void
 }
 
-export const createRunLogger = (): RunLogger => {
-  const now = new Date()
+type CreateRunLoggerOptions = {
+  now?: Date
+  runsDir?: string
+}
+
+export const createRunLogger = (options: CreateRunLoggerOptions = {}): RunLogger => {
+  const now = options.now ?? new Date()
   const runId = makeRunId(now)
-  const outputDir = resolve(process.cwd(), '../../data/runs')
+  const outputDir = options.runsDir ?? resolve(process.cwd(), '../../data/runs')
   const filePath = resolve(outputDir, `${runId}.jsonl`)
   mkdirSync(outputDir, { recursive: true })
   const stream = createWriteStream(filePath, { flags: 'a', encoding: 'utf-8' })

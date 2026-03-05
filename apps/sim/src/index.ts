@@ -1,6 +1,10 @@
+import { createServer } from 'node:http'
+import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
+import { dirname, extname, normalize, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
 import { z } from 'zod'
-import { resolve } from 'node:path'
 import {
   eventSchema,
   heartbeatMessageSchema,
@@ -35,11 +39,11 @@ import {
   tickFleetState,
 } from './fleet.js'
 import { createRunLogger } from './run-logger.js'
-import { startReplayApiServer } from './replay-api.js'
+import { createReplayApiRequestHandler } from './replay-api.js'
 
 const envSchema = z.object({
+  PORT: z.coerce.number().int().min(1).max(65535).optional(),
   SIM_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
-  REPLAY_API_PORT: z.coerce.number().int().min(1).max(65535).default(8091),
   REPLAY_SCAN_MAX_FILES: z.coerce.number().int().min(1).max(500).default(8),
   REPLAY_MAX_RUN_FILE_SIZE_MB: z.coerce.number().int().min(1).max(512).default(24),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(250).optional(),
@@ -56,8 +60,8 @@ const envSchema = z.object({
 })
 
 const env = envSchema.parse({
+  PORT: process.env.PORT,
   SIM_PORT: process.env.SIM_PORT ?? '8090',
-  REPLAY_API_PORT: process.env.REPLAY_API_PORT ?? '8091',
   REPLAY_SCAN_MAX_FILES: process.env.REPLAY_SCAN_MAX_FILES ?? '8',
   REPLAY_MAX_RUN_FILE_SIZE_MB: process.env.REPLAY_MAX_RUN_FILE_SIZE_MB ?? '24',
   HEARTBEAT_INTERVAL_MS: process.env.HEARTBEAT_INTERVAL_MS,
@@ -74,16 +78,27 @@ const env = envSchema.parse({
 })
 
 const heartbeatIntervalMs = env.HEARTBEAT_INTERVAL_MS ?? env.PING_INTERVAL_MS ?? 3000
+const listenPort = env.PORT ?? env.SIM_PORT
 type OutboundMessage = WsServerMessage
 
-const wss = new WebSocketServer({ port: env.SIM_PORT })
-const fleetState = createFleetState(env.ROBOT_COUNT, Date.now(), env.SIM_MODE)
-const runLogger = createRunLogger()
-const replayApi = startReplayApiServer({
-  port: env.REPLAY_API_PORT,
-  runsDir: resolve(process.cwd(), '../../data/runs'),
+const simSourceDir = dirname(fileURLToPath(import.meta.url))
+const simRootDir = resolve(simSourceDir, '..')
+const repoRootDir = resolve(simRootDir, '..', '..')
+const runsDir = resolve(repoRootDir, 'data/runs')
+const webDistDir = resolve(repoRootDir, 'apps/web/dist')
+
+const hasWebDist = existsSync(resolve(webDistDir, 'index.html'))
+const replayRequestHandler = createReplayApiRequestHandler({
+  runsDir,
   scanMaxFiles: env.REPLAY_SCAN_MAX_FILES,
   maxRunFileSizeBytes: env.REPLAY_MAX_RUN_FILE_SIZE_MB * 1024 * 1024,
+})
+
+const httpServer = createServer()
+const wss = new WebSocketServer({ noServer: true })
+const fleetState = createFleetState(env.ROBOT_COUNT, Date.now(), env.SIM_MODE)
+const runLogger = createRunLogger({
+  runsDir,
 })
 const messageHistory: OutboundMessage[] = []
 let streamSequence = 0
@@ -346,6 +361,139 @@ const scheduleFleetTick = (): void => {
   )
 }
 
+const contentTypeByExtension: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.map': 'application/json; charset=utf-8',
+}
+
+const sendJsonResponse = (statusCode: number, payload: Record<string, unknown>): string =>
+  JSON.stringify({
+    statusCode,
+    ...payload,
+  })
+
+const resolveStaticPath = (pathname: string): string | null => {
+  const requestedPath = pathname === '/' ? '/index.html' : pathname
+  const normalizedPath = normalize(requestedPath).replace(/^(\.\.(\/|\\|$))+/, '')
+  const filePath = resolve(webDistDir, `.${normalizedPath}`)
+  if (!filePath.startsWith(webDistDir)) {
+    return null
+  }
+
+  return filePath
+}
+
+const serveStaticAsset = async (pathname: string): Promise<{
+  statusCode: number
+  body: Buffer
+  contentType: string
+} | null> => {
+  if (!hasWebDist) {
+    return null
+  }
+
+  const directPath = resolveStaticPath(pathname)
+  if (directPath) {
+    try {
+      const body = await readFile(directPath)
+      const extension = extname(directPath).toLowerCase()
+      return {
+        statusCode: 200,
+        body,
+        contentType: contentTypeByExtension[extension] ?? 'application/octet-stream',
+      }
+    } catch {
+      // Fallback to index.html for SPA routes.
+    }
+  }
+
+  try {
+    const body = await readFile(resolve(webDistDir, 'index.html'))
+    return {
+      statusCode: 200,
+      body,
+      contentType: contentTypeByExtension['.html'],
+    }
+  } catch {
+    return null
+  }
+}
+
+httpServer.on('request', async (request, response) => {
+  const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+  const pathname = url.pathname
+
+  if (pathname === '/health') {
+    response.statusCode = 200
+    response.setHeader('Content-Type', 'application/json; charset=utf-8')
+    response.end(
+      sendJsonResponse(200, {
+        status: 'ok',
+        wsClients: countConnectedClients(),
+        runId: runLogger.runId,
+      }),
+    )
+    return
+  }
+
+  const replayHandled = await replayRequestHandler(request, response)
+  if (replayHandled) {
+    return
+  }
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    response.statusCode = 405
+    response.setHeader('Content-Type', 'application/json; charset=utf-8')
+    response.end(sendJsonResponse(405, { error: 'Method not allowed' }))
+    return
+  }
+
+  const asset = await serveStaticAsset(pathname)
+  if (asset) {
+    response.statusCode = asset.statusCode
+    response.setHeader('Content-Type', asset.contentType)
+    if (pathname.startsWith('/assets/')) {
+      response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    } else {
+      response.setHeader('Cache-Control', 'no-cache')
+    }
+
+    if (request.method === 'HEAD') {
+      response.end()
+      return
+    }
+
+    response.end(asset.body)
+    return
+  }
+
+  response.statusCode = 404
+  response.setHeader('Content-Type', 'application/json; charset=utf-8')
+  response.end(sendJsonResponse(404, { error: 'Not found' }))
+})
+
+httpServer.on('upgrade', (request, socket, head) => {
+  const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+  if (url.pathname !== '/ws' && url.pathname !== '/') {
+    socket.destroy()
+    return
+  }
+
+  wss.handleUpgrade(request, socket, head, (wsSocket) => {
+    wss.emit('connection', wsSocket, request)
+  })
+})
+
 wss.on('connection', (socket, request) => {
   const remoteAddress = request.socket.remoteAddress ?? 'unknown'
   console.log(`[sim] client connected from ${remoteAddress}`)
@@ -391,6 +539,10 @@ wss.on('connection', (socket, request) => {
   socket.on('close', () => {
     console.log(`[sim] client disconnected: ${remoteAddress}`)
   })
+})
+
+httpServer.listen(listenPort, () => {
+  console.log(`[sim] service listening at http://localhost:${listenPort}`)
 })
 
 const heartbeatTimer = setInterval(() => {
@@ -447,11 +599,16 @@ const shutdown = (signal: string): void => {
   if (modeSwitchTimer) {
     clearInterval(modeSwitchTimer)
   }
+
+  for (const client of wss.clients) {
+    client.close(1001, 'server shutdown')
+  }
+
   wss.close(() => {
-    replayApi.close(() => {
+    httpServer.close(() => {
       runLogger.close(() => {
         console.log('[sim] websocket server closed')
-        console.log('[sim] replay api server closed')
+        console.log('[sim] http server closed')
         console.log(`[sim] run log flushed: ${runLogger.filePath}`)
         process.exit(0)
       })
@@ -470,8 +627,9 @@ if (env.SIM_EXIT_AFTER_MS) {
   setTimeout(() => shutdown('SIM_EXIT_AFTER_MS'), env.SIM_EXIT_AFTER_MS).unref()
 }
 
-console.log(`[sim] ws server listening at ws://localhost:${env.SIM_PORT}`)
-console.log(`[sim] replay api port: ${env.REPLAY_API_PORT}`)
+console.log(
+  `[sim] endpoints: ws://localhost:${listenPort}/ws | http://localhost:${listenPort}/replay/runs`,
+)
 console.log(
   `[sim] replay index settings: scanMaxFiles=${env.REPLAY_SCAN_MAX_FILES} maxRunFileSizeMB=${env.REPLAY_MAX_RUN_FILE_SIZE_MB}`,
 )
@@ -479,6 +637,12 @@ console.log(`[sim] heartbeat interval: ${heartbeatIntervalMs}ms`)
 console.log(`[sim] snapshot interval: ${env.SNAPSHOT_INTERVAL_MS}ms`)
 console.log(`[sim] run session: ${runLogger.runId}`)
 console.log(`[sim] run log file: ${runLogger.filePath}`)
+console.log(`[sim] runs dir: ${runsDir}`)
+console.log(
+  `[sim] static frontend: ${
+    hasWebDist ? `enabled (${webDistDir})` : `disabled (build web first: ${webDistDir})`
+  }`,
+)
 console.log(
   `[sim] fleet generator: mode=${fleetState.mode}, robots=${fleetState.robots.length}, ` +
     `tickRange=${env.FLEET_TICK_MIN_MS}-${env.FLEET_TICK_MAX_MS}ms, ` +

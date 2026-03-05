@@ -82,7 +82,7 @@ npm run dev
 
 Default endpoints:
 - WebSocket stream: `ws://localhost:8090`
-- Replay API: `http://localhost:8091`
+- Replay API: `http://localhost:8090/replay/runs`
 
 2. Start frontend:
 
@@ -113,6 +113,9 @@ Root:
 - `npm run dev`
 - `npm run dev:skip-install`
 - `npm run install:all`
+- `npm run build`
+- `npm run lint`
+- `npm run test`
 
 ## Data Schemas (Core)
 
@@ -190,7 +193,7 @@ flowchart LR
     Fleet["Fleet Runtime"]
     WS["WebSocket Server (:8090)"]
     Logger["JSONL Run Logger"]
-    ReplayAPI["Replay API (:8091)"]
+    ReplayAPI["Replay API (/replay/*)"]
   end
 
   Contracts["packages/contracts\n(zod schemas + shared types)"]
@@ -207,6 +210,30 @@ flowchart LR
   Contracts --- WS
   Contracts --- ReplayAPI
 ```
+
+## Render Deployment (Single Provider)
+
+Deployment files included:
+- `render.yaml` (single Render Web Service blueprint)
+- `.github/workflows/ci.yml` (CI checks used before auto-deploy)
+
+Runtime shape on Render:
+- one Node service serves:
+  - WebSocket stream at `/ws`
+  - Replay API at `/replay/*`
+  - frontend static build from `apps/web/dist`
+
+Manual steps required in your Render/GitHub accounts:
+1. Push repository with `render.yaml` and CI workflow to GitHub.
+2. In Render, create service from Blueprint (`render.yaml`).
+3. Connect deploy branch to `main`.
+4. Set Auto Deploy to `After CI Checks Pass`.
+5. In GitHub, add branch protection for `main` and require CI status checks.
+6. After first deploy, open:
+   - `/health`
+   - `/replay/runs`
+   - root app URL
+   and validate reconnect behavior after idle cold start.
 
 ## Next Steps
 
