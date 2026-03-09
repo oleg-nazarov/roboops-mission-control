@@ -3,6 +3,12 @@
 RoboOps Mission Control is an operations and debugging console for autonomous robot fleets.
 The MVP combines live fleet monitoring, incident triage, replay from JSONL logs, and incident report export.
 
+## Live Demo
+
+**[roboops-mission-control.onrender.com](https://roboops-mission-control.onrender.com/)** (*)
+
+*\* The demo runs on free tier, so it may take up to 60 seconds to wake up.*
+
 ## What Problem This Solves
 
 Autonomy and robotics teams need one operator surface to:
