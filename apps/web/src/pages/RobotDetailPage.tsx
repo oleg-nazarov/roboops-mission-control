@@ -8,7 +8,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useAppStore } from '../state/appStore'
 
 type ChartPoint = {
@@ -190,8 +190,11 @@ function TelemetryChartCard({ title, data, dataKey, color, unit, domain }: Telem
 }
 
 export function RobotDetailPage() {
+  const navigate = useNavigate()
   const { robotId } = useParams()
   const setSelectedRobotId = useAppStore((state) => state.setSelectedRobotId)
+  const snapshotRobots = useAppStore((state) => state.stream.snapshot?.robots ?? null)
+  const telemetryByRobot = useAppStore((state) => state.stream.telemetryByRobot)
   const snapshotRobot = useAppStore((state) =>
     robotId ? state.stream.snapshot?.robots.find((robot) => robot.robotId === robotId) ?? null : null,
   )
@@ -211,6 +214,21 @@ export function RobotDetailPage() {
     WARN: true,
     ERROR: true,
   })
+
+  const robotOptions = useMemo(() => {
+    const robotIds = new Set<string>([
+      ...(snapshotRobots?.map((robot) => robot.robotId) ?? []),
+      ...Object.keys(telemetryByRobot),
+    ])
+    return [...robotIds].sort((left, right) => left.localeCompare(right))
+  }, [snapshotRobots, telemetryByRobot])
+
+  const selectedRobotIndex = robotId ? robotOptions.indexOf(robotId) : -1
+  const previousRobotId = selectedRobotIndex > 0 ? robotOptions[selectedRobotIndex - 1] : null
+  const nextRobotId =
+    selectedRobotIndex >= 0 && selectedRobotIndex < robotOptions.length - 1
+      ? robotOptions[selectedRobotIndex + 1]
+      : null
 
   useEffect(() => {
     setSelectedRobotId(robotId ?? null)
@@ -268,10 +286,62 @@ export function RobotDetailPage() {
     }))
   }
 
+  const openRobotDetail = (nextRobotId: string): void => {
+    setSelectedRobotId(nextRobotId)
+    navigate(`/robots/${nextRobotId}`)
+  }
+
   return (
     <section className="panel animate-shell-in p-5 [animation-delay:80ms]">
       <p className="text-xs uppercase tracking-[0.18em] text-muted">Robot Detail</p>
-      <h2 className="mt-2 font-display text-lg font-semibold">Robot: {robotId ?? 'unknown'}</h2>
+      <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+        <h2 className="font-display text-lg font-semibold">Robot: {robotId ?? 'unknown'}</h2>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-accent/55 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!previousRobotId}
+            onClick={() => {
+              if (previousRobotId) {
+                openRobotDetail(previousRobotId)
+              }
+            }}
+            type="button"
+          >
+            Previous
+          </button>
+          <label className="flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-muted">
+            <span>Robot</span>
+            <select
+              className="min-w-[128px] rounded-panel border border-border/70 bg-surface px-3 py-2 text-sm text-text outline-none transition focus:border-accent/60"
+              onChange={(event) => openRobotDetail(event.target.value)}
+              value={robotId ?? ''}
+            >
+              {robotOptions.length === 0 ? (
+                <option value="">No robots</option>
+              ) : (
+                robotOptions.map((optionRobotId) => (
+                  <option key={optionRobotId} value={optionRobotId}>
+                    {optionRobotId}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          <button
+            className="rounded-pill border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition hover:border-accent/55 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!nextRobotId}
+            onClick={() => {
+              if (nextRobotId) {
+                openRobotDetail(nextRobotId)
+              }
+            }}
+            type="button"
+          >
+            Next
+          </button>
+        </div>
+      </div>
 
       {!robotId ? (
         <p className="mt-3 text-sm text-status-fault">Robot ID is missing in route.</p>
