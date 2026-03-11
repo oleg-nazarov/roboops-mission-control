@@ -52,8 +52,8 @@ const envSchema = z.object({
   SIM_MODE: opsModeSchema.default('DELIVERY'),
   MODE_SWITCH_INTERVAL_MS: z.coerce.number().int().min(1000).optional(),
   ROBOT_COUNT: z.coerce.number().int().min(6).max(20).default(12),
-  FLEET_TICK_MIN_MS: z.coerce.number().int().min(200).default(200),
-  FLEET_TICK_MAX_MS: z.coerce.number().int().min(200).default(500),
+  FLEET_TICK_MIN_MS: z.coerce.number().int().min(200).default(900),
+  FLEET_TICK_MAX_MS: z.coerce.number().int().min(200).default(1100),
   FLEET_LOG_INTERVAL_MS: z.coerce.number().int().min(500).default(5000),
   STREAM_HISTORY_MAX: z.coerce.number().int().min(100).max(50000).default(2000),
   SIM_EXIT_AFTER_MS: z.coerce.number().int().positive().optional(),
@@ -70,8 +70,8 @@ const env = envSchema.parse({
   SIM_MODE: process.env.SIM_MODE ?? 'DELIVERY',
   MODE_SWITCH_INTERVAL_MS: process.env.MODE_SWITCH_INTERVAL_MS,
   ROBOT_COUNT: process.env.ROBOT_COUNT ?? '12',
-  FLEET_TICK_MIN_MS: process.env.FLEET_TICK_MIN_MS ?? '200',
-  FLEET_TICK_MAX_MS: process.env.FLEET_TICK_MAX_MS ?? '500',
+  FLEET_TICK_MIN_MS: process.env.FLEET_TICK_MIN_MS ?? '900',
+  FLEET_TICK_MAX_MS: process.env.FLEET_TICK_MAX_MS ?? '1100',
   FLEET_LOG_INTERVAL_MS: process.env.FLEET_LOG_INTERVAL_MS ?? '5000',
   STREAM_HISTORY_MAX: process.env.STREAM_HISTORY_MAX ?? '2000',
   SIM_EXIT_AFTER_MS: process.env.SIM_EXIT_AFTER_MS,
@@ -657,3 +657,4 @@ publishSystemEvent(
 )
 publishSnapshot()
 publishHeartbeat({ reason: 'session-started' })
+
