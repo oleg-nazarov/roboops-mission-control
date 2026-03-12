@@ -9,6 +9,41 @@ The MVP combines live fleet monitoring, incident triage, replay from JSONL logs,
 
 *\* The demo runs on free tier, so it may take up to 60 seconds to wake up.*
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Fleet Overview</strong><br />
+      <img src="docs/media/fleet-overview.png" alt="Fleet Overview" />
+    </td>
+    <td width="50%" valign="top">
+      <strong>Incidents</strong><br />
+      <img src="docs/media/incidents.png" alt="Incidents" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Live Map: Delivery</strong><br />
+      <img src="docs/media/live-map-delivery.png" alt="Live Map Delivery" />
+    </td>
+    <td width="50%" valign="top">
+      <strong>Live Map: Warehouse</strong><br />
+      <img src="docs/media/live-map-warehouse.png" alt="Live Map Warehouse" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Robot Detail</strong><br />
+      <img src="docs/media/robot-detail.png" alt="Robot Detail" />
+    </td>
+    <td width="50%" valign="top">
+      <strong>Incident Replay</strong><br />
+      <img src="docs/media/replay.png" alt="Incident Replay" />
+    </td>
+  </tr>
+</table>
+
 ## What Problem This Solves
 
 Autonomy and robotics teams need one operator surface to:
@@ -28,19 +63,7 @@ Autonomy and robotics teams need one operator surface to:
 - Replay viewer with scrubber, marker jumps, speed controls, and synchronized metrics.
 - Incident report export (`.json` and `.md`) with replay deep links.
 
-## Screenshots and GIF
-
-Capture assets are organized in `docs/media`.
-Expected files:
-- `docs/media/fleet-overview.png`
-- `docs/media/live-map-delivery.png`
-- `docs/media/live-map-warehouse.png`
-- `docs/media/robot-detail.png`
-- `docs/media/incidents.png`
-- `docs/media/replay.gif`
-
 ## Tech Stack
-
 - Frontend: React, TypeScript, Vite, Tailwind CSS v4, Zustand, TanStack Query, Recharts, MapLibre GL.
 - Simulator backend: Node.js, TypeScript, `ws`.
 - Contracts: shared runtime schemas and types via `@roboops/contracts` (`zod`).
@@ -99,29 +122,6 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 Open `http://127.0.0.1:5173`.
-
-## Available Commands
-
-`apps/web`:
-- `npm run dev`
-- `npm run test`
-- `npm run lint`
-- `npm run build`
-- `npm run preview`
-
-`apps/sim`:
-- `npm run dev`
-- `npm run start`
-- `npm run generate`
-- `npm run build`
-
-Root:
-- `npm run dev`
-- `npm run dev:skip-install`
-- `npm run install:all`
-- `npm run build`
-- `npm run lint`
-- `npm run test`
 
 ## Data Schemas (Core)
 
@@ -185,7 +185,7 @@ Full schema source: `packages/contracts/src/index.ts`.
 
 ## Architecture
 
-Detailed document: `docs/architecture.md`.
+Detailed document: [docs/architecture.md](docs/architecture.md).
 
 ```mermaid
 flowchart LR
@@ -229,25 +229,4 @@ Runtime shape on Render:
   - Replay API at `/replay/*`
   - frontend static build from `apps/web/dist`
 
-Manual steps required in your Render/GitHub accounts:
-1. Push repository with `render.yaml` and CI workflow to GitHub.
-2. In Render, create service from Blueprint (`render.yaml`).
-3. Connect deploy branch to `main`.
-4. Set Auto Deploy to `After CI Checks Pass`.
-5. In GitHub, add branch protection for `main` and require CI status checks.
-6. After first deploy, open:
-   - `/health`
-   - `/replay/runs`
-   - root app URL
-   and validate reconnect behavior after idle cold start.
 
-## Next Steps
-
-- Add smoke Playwright tests for critical user flows.
-- Record and attach a 2-minute demo walkthrough.
-- Deploy web and simulator with production WS/replay URLs.
-
-## Demo Assets
-
-- Script: `docs/demo-script.md`
-- Recording guide: `docs/demo-video-recording.md`
