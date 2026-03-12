@@ -9,6 +9,42 @@ The MVP combines live fleet monitoring, incident triage, replay from JSONL logs,
 
 *\* The demo runs on free tier, so it may take up to 60 seconds to wake up.*
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Fleet Overview</strong><br />
+      <img src="docs/media/fleet-overview.png" alt="Fleet Overview" />
+    </td>
+    <td width="50%" valign="top">
+      <strong>Incidents</strong><br />
+      <img src="docs/media/incidents.png" alt="Incidents" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Live Map: Delivery</strong><br />
+      <img src="docs/media/live-map-delivery.png" alt="Live Map Delivery" />
+    </td>
+    <td width="50%" valign="top">
+      <strong>Live Map: Warehouse</strong><br />
+      <img src="docs/media/live-map-warehouse.png" alt="Live Map Warehouse" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Robot Detail</strong><br />
+      <img src="docs/media/robot-detail.png" alt="Robot Detail" />
+    </td>
+    <td width="50%" valign="top">
+      <strong>Incident Replay</strong><br />
+      <img src="docs/media/replay.png" alt="Incident Replay" />
+    </td>
+  </tr>
+</table>
+
+
 ## What Problem This Solves
 
 Autonomy and robotics teams need one operator surface to:
@@ -28,19 +64,8 @@ Autonomy and robotics teams need one operator surface to:
 - Replay viewer with scrubber, marker jumps, speed controls, and synchronized metrics.
 - Incident report export (`.json` and `.md`) with replay deep links.
 
-## Screenshots and GIF
-
-Capture assets are organized in `docs/media`.
-Expected files:
-- `docs/media/fleet-overview.png`
-- `docs/media/live-map-delivery.png`
-- `docs/media/live-map-warehouse.png`
-- `docs/media/robot-detail.png`
-- `docs/media/incidents.png`
-- `docs/media/replay.gif`
 
 ## Tech Stack
-
 - Frontend: React, TypeScript, Vite, Tailwind CSS v4, Zustand, TanStack Query, Recharts, MapLibre GL.
 - Simulator backend: Node.js, TypeScript, `ws`.
 - Contracts: shared runtime schemas and types via `@roboops/contracts` (`zod`).
@@ -251,3 +276,6 @@ Manual steps required in your Render/GitHub accounts:
 
 - Script: `docs/demo-script.md`
 - Recording guide: `docs/demo-video-recording.md`
+
+
+

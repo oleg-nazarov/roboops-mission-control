@@ -257,9 +257,9 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
   - [x] toast auto-dismiss behavior
 
 ### Task 029 - Docs and architecture
-- [ ] Update `README.md` with:
+- [x] Update `README.md` with:
   - [x] problem statement
-  - [ ] screenshots/GIF
+  - [x] screenshots/GIF
   - [x] run instructions (`web` + `sim`)
   - [x] data schemas
   - [x] architecture diagram
@@ -289,18 +289,9 @@ Quality bar: this MVP should be production-like, polished, and visually strong, 
     - [x] run `apps/sim` build
   - [x] Add branch protection for `main` requiring CI checks before merge
 
-## Suggested Execution Order (review/commit cycle)
-1. Task 001-006 (bootstrap + contracts)
-2. Task 007-011 (simulator + stream + JSONL)
-3. Task 012-014 (frontend skeleton + WS integration)
-4. Task 015-020 (fleet/map/robot detail)
-5. Task 021-024 (incidents + replay)
-6. Task 025-026 (report export)
-7. Task 027-031 (quality/docs/demo/deploy)
-
 ## MVP Definition of Done
-- [ ] 4 key screens work: Fleet, Live Map, Robot Detail, Incidents + Replay
-- [ ] Real-time WS telemetry stream with anomalies is working
-- [ ] Replay reproduces timeline correctly from JSONL
-- [ ] Incident report generation works (at least JSON)
-- [ ] `README.md` + short demo video are ready
+- [x] 4 key screens work: Fleet, Live Map, Robot Detail, Incidents + Replay
+- [x] Real-time WS telemetry stream with anomalies is working
+- [x] Replay reproduces timeline correctly from JSONL
+- [x] Incident report generation works (at least JSON)
+- [x] `README.md` + screenshots are ready
