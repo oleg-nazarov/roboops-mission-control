@@ -44,7 +44,6 @@ The MVP combines live fleet monitoring, incident triage, replay from JSONL logs,
   </tr>
 </table>
 
-
 ## What Problem This Solves
 
 Autonomy and robotics teams need one operator surface to:
@@ -63,7 +62,6 @@ Autonomy and robotics teams need one operator surface to:
 - Incidents queue with filtering and direct jump to replay.
 - Replay viewer with scrubber, marker jumps, speed controls, and synchronized metrics.
 - Incident report export (`.json` and `.md`) with replay deep links.
-
 
 ## Tech Stack
 - Frontend: React, TypeScript, Vite, Tailwind CSS v4, Zustand, TanStack Query, Recharts, MapLibre GL.
@@ -124,29 +122,6 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 Open `http://127.0.0.1:5173`.
-
-## Available Commands
-
-`apps/web`:
-- `npm run dev`
-- `npm run test`
-- `npm run lint`
-- `npm run build`
-- `npm run preview`
-
-`apps/sim`:
-- `npm run dev`
-- `npm run start`
-- `npm run generate`
-- `npm run build`
-
-Root:
-- `npm run dev`
-- `npm run dev:skip-install`
-- `npm run install:all`
-- `npm run build`
-- `npm run lint`
-- `npm run test`
 
 ## Data Schemas (Core)
 
@@ -210,7 +185,7 @@ Full schema source: `packages/contracts/src/index.ts`.
 
 ## Architecture
 
-Detailed document: `docs/architecture.md`.
+Detailed document: [docs/architecture.md](docs/architecture.md).
 
 ```mermaid
 flowchart LR
@@ -253,29 +228,5 @@ Runtime shape on Render:
   - WebSocket stream at `/ws`
   - Replay API at `/replay/*`
   - frontend static build from `apps/web/dist`
-
-Manual steps required in your Render/GitHub accounts:
-1. Push repository with `render.yaml` and CI workflow to GitHub.
-2. In Render, create service from Blueprint (`render.yaml`).
-3. Connect deploy branch to `main`.
-4. Set Auto Deploy to `After CI Checks Pass`.
-5. In GitHub, add branch protection for `main` and require CI status checks.
-6. After first deploy, open:
-   - `/health`
-   - `/replay/runs`
-   - root app URL
-   and validate reconnect behavior after idle cold start.
-
-## Next Steps
-
-- Add smoke Playwright tests for critical user flows.
-- Record and attach a 2-minute demo walkthrough.
-- Deploy web and simulator with production WS/replay URLs.
-
-## Demo Assets
-
-- Script: `docs/demo-script.md`
-- Recording guide: `docs/demo-video-recording.md`
-
 
 

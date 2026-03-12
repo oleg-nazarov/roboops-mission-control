@@ -1,12 +1,5 @@
 # RoboOps Mission Control - Architecture
 
-## Goal
-
-Provide a production-style operator workflow for autonomous fleets:
-- live telemetry and mission operations,
-- incident detection and triage,
-- replay and post-incident analysis from persisted run data.
-
 ## Main Components
 
 - `apps/web`
@@ -107,9 +100,3 @@ Current reliability features:
 - reconnect-safe stream resume via `lastStreamSeq`,
 - heartbeat visibility in UI,
 - deduplication of repeated events/incidents on the client.
-
-Planned extension points:
-- rules/alerts engine (thresholds and anomaly policies),
-- teleoperation module handoff,
-- ROS bag or rosbridge adapters,
-- auth + audit trail for operator actions.
