@@ -5,7 +5,7 @@ The MVP combines live fleet monitoring, incident triage, replay from JSONL logs,
 
 ## Demo video
 
-[2-minute Loom walkthrough](https://www.loom.com/share/6c2d2454af40404086a525d2abd8d587)
+[2-minute walkthrough](https://youtu.be/2fkUI5YtjJQ)
 
 ## Live Demo
 
